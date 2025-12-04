@@ -12,6 +12,13 @@ def generate_launch_description():
     # Package name
     package_name='diff_drive_robot'
 
+    # Set GZ_SIM_RESOURCE_PATH for Gazebo Harmonic to find models
+    models_path = os.path.join(get_package_share_directory(package_name), 'models')
+    if 'GZ_SIM_RESOURCE_PATH' in os.environ:
+        os.environ['GZ_SIM_RESOURCE_PATH'] += os.pathsep + models_path
+    else:
+        os.environ['GZ_SIM_RESOURCE_PATH'] = models_path
+
     # Launch configurations
     world = LaunchConfiguration('world')
     rviz = LaunchConfiguration('rviz')
