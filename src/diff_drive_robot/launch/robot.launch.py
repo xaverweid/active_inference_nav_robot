@@ -92,7 +92,7 @@ def generate_launch_description():
     aic_node = Node(
         package='active_inference_loc',
         executable='aic_node',
-        name='active_inference_control_node',
+        name='aic_node',
         output='screen',
         parameters=[{'use_sim_time': True}],  # if your node should use sim time
     )
