@@ -89,18 +89,13 @@ def generate_launch_description():
                     output='screen',)]
     )
 
-    ekf_node = Node(
-        package='robot_localization',
-        executable='ekf_node',
-        name='ekf_filter_node',
+    aic_node = Node(
+        package='active_inference_loc',
+        executable='aic_node',
+        name='active_inference_control_node',
         output='screen',
-        parameters=[
-            os.path.join(get_package_share_directory(package_name), 'config', 'ekf.yaml'),
-            {'use_sim_time': LaunchConfiguration('use_sim_time')},
-             ]
+        # parameters=[os.path.join(pkg_dir, 'config', 'params.yaml')] # If you use parameters
     )
-
-    
 
     # Launch them all!
     return LaunchDescription([
@@ -115,5 +110,5 @@ def generate_launch_description():
         gazebo_client,
         ros_gz_bridge,
         spawn_diff_bot,
-        ekf_node,
+        #aic_node,
     ])

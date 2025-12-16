@@ -19,6 +19,13 @@ def generate_launch_description():
         description='Open RViz'
     )
 
+    # New argument to opt-in to mapping. Default is False so mapping
+    # won't start unless explicitly requested.
+    enable_mapping_arg = DeclareLaunchArgument(
+        'enable_mapping', default_value='false',
+        description='Enable slam_toolbox mapping (opt-in)'
+    )
+
     rviz_config_arg = DeclareLaunchArgument(
         'rviz_config', default_value='mapping.rviz',
         description='RViz config file'
@@ -47,7 +54,7 @@ def generate_launch_description():
         package='rviz2',
         executable='rviz2',
         arguments=['-d', PathJoinSubstitution([pkg_diff_drive_robot, 'rviz', LaunchConfiguration('rviz_config')])],
-        condition=IfCondition(LaunchConfiguration('rviz')),
+        condition=IfCondition(LaunchConfiguration('enable_mapping')),
         parameters=[
             {'use_sim_time': LaunchConfiguration('use_sim_time')},
         ]
@@ -56,6 +63,7 @@ def generate_launch_description():
 
     slam_toolbox_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(slam_toolbox_launch_path),
+        condition=IfCondition(LaunchConfiguration('enable_mapping')),
         launch_arguments={
                 'use_sim_time': LaunchConfiguration('use_sim_time'),
                 'slam_params_file': slam_toolbox_params_path,
@@ -67,6 +75,7 @@ def generate_launch_description():
     launchDescriptionObject.add_action(rviz_launch_arg)
     launchDescriptionObject.add_action(rviz_config_arg)
     launchDescriptionObject.add_action(sim_time_arg)
+    launchDescriptionObject.add_action(enable_mapping_arg)
     launchDescriptionObject.add_action(rviz_node)
     launchDescriptionObject.add_action(slam_toolbox_launch)
 

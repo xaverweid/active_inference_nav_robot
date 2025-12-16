@@ -21,10 +21,19 @@
 
 # gz topic published by DiffDrive plugin
 #- ros_topic_name: "tf"
-#  gz_topic_name: "tf"
-#  ros_type_name: "tf2_msgs/msg/TFMessage"
-#  gz_type_name: "gz.msgs.Pose_V"
-#  direction: GZ_TO_ROS
+# Bridge TF from Gazebo to ROS so TF frames (odom, base_link, etc.) are available in ROS
+- ros_topic_name: "tf"
+  gz_topic_name: "tf"
+  ros_type_name: "tf2_msgs/msg/TFMessage"
+  gz_type_name: "gz.msgs.Pose_V"
+  direction: GZ_TO_ROS
+
+# Also bridge static TFs
+- ros_topic_name: "tf_static"
+  gz_topic_name: "tf_static"
+  ros_type_name: "tf2_msgs/msg/TFMessage"
+  gz_type_name: "gz.msgs.Pose_V"
+  direction: GZ_TO_ROS
 
 # gz topic subscribed to by DiffDrive plugin
 - ros_topic_name: "cmd_vel"
@@ -47,9 +56,9 @@
   gz_type_name: "gz.msgs.LaserScan"
   direction: GZ_TO_ROS
 
-# gz topic published by Sensors plugin (Camera)
-- ros_topic_name: "camera/camera_info"
-  gz_topic_name: "camera/camera_info"
-  ros_type_name: "sensor_msgs/msg/CameraInfo"
-  gz_type_name: "gz.msgs.CameraInfo"
-  direction: GZ_TO_ROS
+# # gz topic published by Sensors plugin (Camera)
+# - ros_topic_name: "camera/camera_info"
+#   gz_topic_name: "camera/camera_info"
+#   ros_type_name: "sensor_msgs/msg/CameraInfo"
+#   gz_type_name: "gz.msgs.CameraInfo"
+#   direction: GZ_TO_ROS

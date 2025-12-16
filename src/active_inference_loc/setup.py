@@ -13,8 +13,8 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='ubuntu24',
-    maintainer_email='your-email@example.com',
+    maintainer='xaver',
+    maintainer_email='fxweidinger@googlemail.com',
     description='TODO: Package description',
     license='TODO: License declaration',
     extras_require={
@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'aic_node=active_inference_loc.aic_node:main',
         ],
     },
 )
