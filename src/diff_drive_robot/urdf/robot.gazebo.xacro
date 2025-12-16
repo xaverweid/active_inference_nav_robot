@@ -1,5 +1,6 @@
 <?xml version="1.0"?>
-<robot>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
    <gazebo>
         <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
             <right_joint>right_wheel_joint</right_joint>
@@ -42,37 +43,12 @@
         </sensor>
     </gazebo>
 
-    <gazebo reference="laser_frame">
-        <sensor name="laser" type="gpu_lidar">
-            <pose> 0 0 0 0 0 0 </pose>
-            <always_on>true</always_on>
-            <visualize>true</visualize>
-            <update_rate>10</update_rate>
-            <topic>scan</topic>
-            <gz_frame_id>laser_frame</gz_frame_id>
-            <lidar>
-                <scan>
-                    <horizontal>
-                    <samples>720</samples>
-                    <resolution>1</resolution>
-                    <min_angle>-3.14</min_angle>
-                    <max_angle>3.14</max_angle>
-                    </horizontal>
-                </scan>
-                <range>
-                    <min>0.05</min>
-                    <max>20.0</max>
-                    <resolution>0.01</resolution>
-                </range>
-                <noise>
-                    <type>gaussian</type>
-                    <mean>0.0</mean>
-                    <stddev>0.01</stddev>
-                </noise>
-                <frame_id>laser_frame</frame_id>
-            </lidar>
-            <always_on>1</always_on>
-            <visualize>true</visualize>
-        </sensor>
-    </gazebo>
+
+    <!-- Choose one of the following LIDAR sensors by uncommenting the desired lines:  -->
+    <!-- <xacro:include filename="$(find diff_drive_robot)/urdf/lidar_gpu.gazebo.xacro"/>
+    <xacro:lidar_gpu/> -->
+
+    <xacro:include filename="$(find diff_drive_robot)/urdf/lidar_ray.gazebo.xacro"/>
+    <xacro:lidar_ray/>
+
 </robot>

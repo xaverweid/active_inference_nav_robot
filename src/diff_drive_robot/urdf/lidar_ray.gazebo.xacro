@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:macro name="lidar_ray">
+
+    <gazebo reference="laser_frame">
+      <sensor name="lidar" type="ray">
+        <update_rate>10</update_rate>
+
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>360</samples>
+              <min_angle>-3.14</min_angle>
+              <max_angle>3.14</max_angle>
+            </horizontal>
+          </scan>
+
+          <range>
+            <min>0.3</min>
+            <max>12</max>
+          </range>
+        </ray>
+
+        <topic>~/scan</topic>
+
+      </sensor>
+    </gazebo>
+
+  </xacro:macro>
+</robot>

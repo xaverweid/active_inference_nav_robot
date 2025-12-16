@@ -12,10 +12,10 @@ slam_toolbox:
     # ROS Parameters
     odom_frame: odom
     map_frame: map
-    base_frame: base_link
+    base_frame: base_footprint
     scan_topic: /scan
     use_map_saver: true
-    mode: mapping #localization
+    mode: mapping #localization -- can be used but needs serial map data, NOT used .pgm and .yaml
 
     # if you'd like to immediately start continuing a map at a given pose
     # or at the dock, but they are mutually exclusive, if pose is given
