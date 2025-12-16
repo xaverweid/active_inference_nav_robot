@@ -94,7 +94,7 @@ def generate_launch_description():
         executable='aic_node',
         name='active_inference_control_node',
         output='screen',
-        # parameters=[os.path.join(pkg_dir, 'config', 'params.yaml')] # If you use parameters
+        parameters=[{'use_sim_time': True}],  # if your node should use sim time
     )
 
     # Launch them all!
@@ -110,5 +110,5 @@ def generate_launch_description():
         gazebo_client,
         ros_gz_bridge,
         spawn_diff_bot,
-        #aic_node,
+        aic_node,
     ])
