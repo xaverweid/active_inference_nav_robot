@@ -1,1 +1,4 @@
 Active Inference Localization Algorithm - separated between the ROS2 package (diff_drive_robot) and the python Active Inference Control package (active_inference_loc)
+
+System: ROS2 Jazzy, Gazebo Harmonic
+
