@@ -1,0 +1,68 @@
+amcl:
+  ros__parameters:
+    # Use simulation time from /clock topic (important for Gazebo)
+    use_sim_time: true
+    
+    # Frame IDs
+    global_frame_id: "map"          # Global (map) frame
+    odom_frame_id: "odom"           # Odometry frame
+    base_frame_id: "base_link"      # Robot base frame
+    scan_topic: "/scan"             # Lidar scan topic
+    
+    # Particle filter configuration
+    max_particles: 2000             # Maximum number of particles
+    min_particles: 500              # Minimum number of particles
+    pf_z_good: 0.99                # Good measurement likelihood
+    pf_z_max: 0.05                 # Max measurement likelihood
+    pf_z_random: 0.05              # Random measurement likelihood
+    pf_z_short: 0.05               # Short measurement likelihood
+    
+    # Motion model noise (odometry drift)
+    # alpha1: rotation noise from rotation
+    # alpha2: rotation noise from translation
+    # alpha3: translation noise from translation
+    # alpha4: translation noise from rotation
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.2
+    alpha4: 0.2
+    alpha5: 0.2
+    
+    # Measurement model (laser beam likelihoods)
+    z_hit: 0.5                      # Weight of hit measurement
+    z_short: 0.05                   # Weight of short measurement
+    z_max: 0.05                     # Weight of max range measurement
+    z_random: 0.5                   # Weight of random measurement
+    sigma_hit: 0.2                  # Std dev of hit measurement
+    lambda_short: 0.1               # Exponential decay for short measurements
+    gamma_short: 0.05               # Gamma distribution for short measurements
+    
+    # Beam configuration
+    max_beams: 60                   # Maximum beams to use from scan
+    do_beamwise_likelihood: false   # Use beamwise likelihood
+    beam_skip_distance: 0.5         # Distance to skip beams
+    beam_skip_error_threshold: 0.9  # Error threshold for skipping
+    beam_skip_threshold: 0.3        # Threshold for skipping
+    
+    # Likelihood field configuration
+    likelihood_max_dist: 2.0        # Max distance for likelihood field
+    likelihood_max_error: 0.2       # Max error for likelihood
+    
+    # Recovery (handling kidnapped robot / global localization)
+    recovery_alpha_fast: 0.0        # Fast exponential decay (0 = disabled)
+    recovery_alpha_slow: 0.0        # Slow exponential decay (0 = disabled)
+    
+    # Update configuration
+    update_min_d: 0.25              # Min distance threshold for update (meters)
+    update_min_a: 0.2               # Min angle threshold for update (radians)
+    resample_interval: 1            # Resample particles every N updates
+    tf_broadcast: true              # Broadcast map->odom transform
+    transform_tolerance: 1.0        # Transform tolerance in seconds
+    
+    # Publishing
+    save_pose_rate: 0.5             # Rate to publish pose (Hz)
+    
+    # RViz / visualization
+    # Note: AMCL automatically publishes:
+    # - /amcl_pose (PoseWithCovarianceStamped) for current pose estimate
+    # - /particle_cloud (PoseArray) for particle distribution

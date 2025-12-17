@@ -7,10 +7,12 @@ from .utils import ros_pose_to_np, get_map_metadata # Need to implement utils
 
 class AICNode(Node):
     def __init__(self):
-        super().__init__('active_inference_control_node')
+        super().__init__('aic_node')
+        # publishers: command and debug
         self.actions = ['forward_short', 'rotate_left', 'rotate_right', 'spin_360', 'wait']
         self.map_data = None # Will be populated once map is received
         self.is_localized = False # State check for when to act
+        self.belief_pub = self.create_publisher(PoseArray, '/aic/belief_state', 10)
         
         # ROS Publishers/Subscribers
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)

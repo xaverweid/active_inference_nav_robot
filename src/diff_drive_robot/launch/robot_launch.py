@@ -3,21 +3,22 @@ from launch_ros.actions import Node
 from launch import LaunchDescription
 from launch.conditions import IfCondition
 from ament_index_python.packages import get_package_share_directory
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, EnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, GroupAction
+from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, GroupAction, SetEnvironmentVariable
 
 def generate_launch_description():
 
     # Package name
     package_name='diff_drive_robot'
 
-    # Set GZ_SIM_RESOURCE_PATH for Gazebo Harmonic to find models
+    # Set GZ_SIM_RESOURCE_PATH for Gazebo Harmonic to find models, adapt in case your ´models´ are stored somewhere else
     models_path = os.path.join(get_package_share_directory(package_name), 'models')
-    if 'GZ_SIM_RESOURCE_PATH' in os.environ:
-        os.environ['GZ_SIM_RESOURCE_PATH'] += os.pathsep + models_path
-    else:
-        os.environ['GZ_SIM_RESOURCE_PATH'] = models_path
+
+    gz_resource_path = SetEnvironmentVariable(
+    name='GZ_SIM_RESOURCE_PATH',
+    value=models_path
+    )   
 
     # Launch configurations
     world = LaunchConfiguration('world')
@@ -39,7 +40,7 @@ def generate_launch_description():
     urdf_path = os.path.join(get_package_share_directory(package_name),'urdf','robot.urdf')
     rsp = IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([os.path.join(
-                    get_package_share_directory(package_name),'launch','rsp.launch.py'
+                    get_package_share_directory(package_name),'launch','rsp_launch.py'
                 )]), launch_arguments={'use_sim_time': 'true', 'urdf': urdf_path}.items()
     )
 
@@ -99,6 +100,7 @@ def generate_launch_description():
 
     # Launch them all!
     return LaunchDescription([
+        gz_resource_path,
         # Declare launch arguments
         declare_rviz,
         declare_world,

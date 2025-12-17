@@ -4,7 +4,7 @@
   <name>active_inference_loc</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="your-email@example.com">ubuntu24</maintainer>
+  <maintainer email="fxweidinger@googlemail.com">xaver</maintainer>
   <license>TODO: License declaration</license>
 
   <depend>rclpy</depend>
