@@ -5,3 +5,4 @@ log/
 __pycache__/
 *.pyc
 frame*
+expanded_urdf/
