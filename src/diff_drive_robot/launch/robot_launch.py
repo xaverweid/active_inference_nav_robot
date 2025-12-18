@@ -112,5 +112,5 @@ def generate_launch_description():
         gazebo_client,
         ros_gz_bridge,
         spawn_diff_bot,
-        aic_node,
+        # aic_node,
     ])

@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-   <gazebo>
+    <gazebo>
         <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
             <right_joint>right_wheel_joint</right_joint>
             <left_joint>left_wheel_joint</left_joint>
@@ -45,10 +45,15 @@
 
 
     <!-- Choose one of the following LIDAR sensors by uncommenting the desired lines:  -->
-    <!-- <xacro:include filename="$(find diff_drive_robot)/urdf/lidar_gpu.gazebo.xacro"/>
-    <xacro:lidar_gpu/> -->
+    <gazebo reference="laser_frame">
+        <xacro:include filename="$(find diff_drive_robot)/urdf/lidar_gpu.sensor.xacro"/>
+        <xacro:lidar_gpu_sensor/>
+    </gazebo>
 
-    <xacro:include filename="$(find diff_drive_robot)/urdf/lidar_ray.gazebo.xacro"/>
-    <xacro:lidar_ray/>
+    <!-- probably never use lidar/ray, since it doesnt work properly for harmonic, while gpu lidar does -->
+    <!-- <gazebo reference="laser_frame">
+        <xacro:include filename="$(find diff_drive_robot)/urdf/lidar_ray.sensor.xacro"/>
+        <xacro:lidar_ray_sensor/>
+    </gazebo> -->
 
 </robot>

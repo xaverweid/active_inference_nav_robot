@@ -45,7 +45,7 @@
 # # gz topic published by IMU plugin
 # - ros_topic_name: "imu"
 #   gz_topic_name: "imu"
-#   ros_type_name: "sensor_msgs/msg/Imu"
+#   ros_type_name: "sensor_msgSs/msg/Imu"
 #   gz_type_name: "gz.msgs.IMU"
 #   direction: GZ_TO_ROS
 
