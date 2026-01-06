@@ -1,6 +1,8 @@
 import numpy as np
 from .models import predict_motion, raycast_scan
-from .utils import get_map_metadata, is_pose_in_collision
+from .utils import get_map_metadata, is_pose_in_collision, ParticleClusturer
+
+#This file is the Brain and should contain the AIF Logic (the decision loop)
 
 def calculate_efe_epistemic(particles, map_data, action):
     # Information gain
