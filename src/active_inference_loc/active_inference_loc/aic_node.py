@@ -37,6 +37,7 @@ class AICNode(Node):
 
     def particle_callback(self, msg):
         # Pass the ROS message to the controller
+        # always triggers whenever AMCL talks
         # The controller will use the ParticleClusturer (in utils) internally
         self.controller.update_belief(msg)
         

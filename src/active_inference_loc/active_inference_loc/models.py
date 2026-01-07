@@ -1,23 +1,56 @@
 import numpy as np
 
 # --- 1. Motion Model ---
-def predict_motion(pose, action_type, step_size=0.5, turn_angle=np.pi/8):
-    # This is a simplified model. In a real thesis, you'd use odometry noise.
-    x, y, theta = pose.x, pose.y, pose.theta
+def predict_motion(pose_obj, action_type):
+    """
+    Predicts the future state of a cluster center.
+    pose_obj: A geometry_msgs/Pose object (from your Clusturer)
+    action_type: String matching your ACTION_EFFECTS keys
+    """
+    # 1. Extract current state
+    x = pose_obj.position.x
+    y = pose_obj.position.y
     
-    if action_type == 'forward_short':
-        x += step_size * np.cos(theta)
-        y += step_size * np.sin(theta)
-    elif action_type == 'rotate_left':
-        theta += turn_angle
-    elif action_type == 'rotate_right':
-        theta -= turn_angle
-    elif action_type == 'spin_360':
-        # HOWEVER, we add noise because odometry is never perfect!
-        # This is CRITICAL: Spinning accumulates error. Active Inference needs to know this.
-        theta += np.random.normal(0, 0.1) # Small rotational noise
-    # 'stop' or 'wait' returns the current pose
+    # Using your arctan2 logic for robust 2D yaw extraction from Quaternion
+    theta = 2 * np.arctan2(pose_obj.orientation.z, pose_obj.orientation.w)
     
+    # 2. Define step sizes (Should match your ACTION_EFFECTS values)
+    # These could also be pulled directly from ACTION_EFFECTS if you import it
+    linear_step = 0.15   # Meters for 'SMALL' actions
+    angular_step = 0.4   # Radians for 'ROTATE' actions
+    
+    # 3. Apply Kinematics
+    if action_type == 'FORWARD_SMALL':
+        x += linear_step * np.cos(theta)
+        y += linear_step * np.sin(theta)
+        
+    elif action_type == 'FORWARD_LARGE':
+        x += (linear_step * 2) * np.cos(theta)
+        y += (linear_step * 2) * np.sin(theta)
+        
+    elif action_type == 'ROTATE_LEFT':
+        theta += angular_step
+        
+    elif action_type == 'ROTATE_RIGHT':
+        theta -= angular_step
+        
+    elif action_type == 'TURN_LEFT':
+        # Combined motion
+        theta += angular_step * 0.5
+        x += linear_step * np.cos(theta)
+        y += linear_step * np.sin(theta)
+        
+    elif action_type == 'SPIN_360':
+        # Resultant theta is theoretically the same, but we add 
+        # 'Epistemic Noise' to represent odometry drift
+        theta += np.random.normal(0, 0.05) 
+        
+    # 4. CRITICAL: Angle Normalization
+    # This keeps theta between -pi and pi. 
+    # Logic: tan(theta) is the same, then atan2 finds the 'clean' version.
+    theta = np.arctan2(np.sin(theta), np.cos(theta))
+    
+    # Return as a simple numpy array for the Raycaster
     return np.array([x, y, theta])
 
 # --- 2. Simplified Raycaster (Needs the map!) ---
@@ -42,9 +75,9 @@ def raycast_scan(particles, map_msg):
     origin_y = map_msg.info.origin.position.y
     map_data = np.array(map_msg.data) # Convert tuple to numpy array for speed
 
-    # 2. Define Laser Angles (e.g., 8 beams: 0, 45, 90, 135...)
-    # 8 beams is a good balance between speed and accuracy for active inference
-    angles = np.linspace(0, 2*np.pi, 8, endpoint=False)
+    # 2. Define Laser Angles (e.g., 16 beams: for 180 degree every 10-15 degree)
+    # maybe reduce to 8 beams since is a good balance between speed and accuracy for active inference
+    angles = np.linspace(0, 2*np.pi, 16, endpoint=False)
     
     # max range of lidar in meters (don't search forever)
     max_range = 10.0 

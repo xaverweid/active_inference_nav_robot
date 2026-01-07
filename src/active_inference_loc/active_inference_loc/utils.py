@@ -3,15 +3,22 @@ from geometry_msgs.msg import Pose
 from sklearn.cluster import KMeans
 from geometry_msgs.msg import PoseArray, Pose
 import tf_transformations # Often used in ROS 2 for orientation
+import math
 
 #This file is for specialized tools that don't make decisions but perform heavy lifting or data transformation.
 #Actions, refine which ones you want
+
+#Actions: for 180 degree lidar, rotation is valid command
+
+# Dictionary mapping action names to Twist components
 ACTION_EFFECTS = {
-    'forward_short': {'linear': 0.2, 'angular': 0.0},
-    'rotate_left':   {'linear': 0.0, 'angular': 0.5},
-    'rotate_right':  {'linear': 0.0, 'angular': -0.5},
-    'spin_360':      {'linear': 0.0, 'angular': 1.0},
-    'wait':          {'linear': 0.0, 'angular': 0.0}
+    'WAIT':          {'linear': 0.0,  'angular': 0.0},
+    'FORWARD_SMALL': {'linear': 0.15, 'angular': 0.0},
+    'FORWARD_LARGE': {'linear': 0.30, 'angular': 0.0},
+    'ROTATE_LEFT':   {'linear': 0.0,  'angular': 0.4},
+    'ROTATE_RIGHT':  {'linear': 0.0,  'angular': -0.4},
+    'TURN_LEFT':     {'linear': 0.15, 'angular': 0.3},
+    'TURN_RIGHT':    {'linear': 0.15, 'angular': -0.3}
 }
 
 def ros_pose_to_np(pose_msg):
@@ -56,10 +63,13 @@ def is_pose_in_collision(pose, map_metadata, threshold=50):
     return True  # Out of bounds = collision
 
 class ParticleClusturer:
-    def __init__(self, n_clusters=3):
+    def __init__(self, n_clusters=5):
         """
         n_clusters: The number of representative modes (Hypotheses) 
-                    to extract. Based on literature, 3-5 is optimal.
+        to extract. Based on literature, 3-5 is optimal.
+        Logic: Raycast from these 3-5 centers, 
+            weight them by how many particles are in that cluster, and calculate the variance.
+
         """
         self.n_clusters = n_clusters
 
