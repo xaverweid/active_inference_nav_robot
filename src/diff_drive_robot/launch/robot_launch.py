@@ -9,11 +9,12 @@ from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, Grou
 
 def generate_launch_description():
 
-    # Package name
-    package_name='diff_drive_robot'
+    # Package directory
+    pkg_dir = get_package_share_directory('diff_drive_robot') # Make sure this is the correct package name
+
 
     # Set GZ_SIM_RESOURCE_PATH for Gazebo Harmonic to find models, adapt in case your ´models´ are stored somewhere else
-    models_path = os.path.join(get_package_share_directory(package_name), 'models')
+    models_path = os.path.join(pkg_dir, 'models')
 
     gz_resource_path = SetEnvironmentVariable(
     name='GZ_SIM_RESOURCE_PATH',
@@ -25,7 +26,7 @@ def generate_launch_description():
     rviz = LaunchConfiguration('rviz')
 
     # Path to default world 
-    world_path = os.path.join(get_package_share_directory(package_name),'worlds', 'world.sdf')
+    world_path = os.path.join(pkg_dir,'worlds', 'world.sdf')
 
     # Launch Arguments
     declare_world = DeclareLaunchArgument(
@@ -37,10 +38,10 @@ def generate_launch_description():
         description='Opens rviz is set to True')
 
     # Launch Robot State Publisher Node
-    urdf_path = os.path.join(get_package_share_directory(package_name),'urdf','robot.urdf')
+    urdf_path = os.path.join(pkg_dir,'urdf','robot.urdf')
     rsp = IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([os.path.join(
-                    get_package_share_directory(package_name),'launch','rsp_launch.py'
+                    pkg_dir,'launch','rsp_launch.py'
                 )]), launch_arguments={'use_sim_time': 'true', 'urdf': urdf_path}.items()
     )
 
@@ -69,7 +70,7 @@ def generate_launch_description():
     )
 
     # Launch the Gazebo-ROS bridge
-    bridge_params = os.path.join(get_package_share_directory(package_name),'config','gz_bridge.yaml')
+    bridge_params = os.path.join(pkg_dir,'config','gz_bridge.yaml')
     ros_gz_bridge = Node(
         package="ros_gz_bridge",
         executable="parameter_bridge",
@@ -80,7 +81,7 @@ def generate_launch_description():
     )
     
     # Launch Rviz with diff bot rviz file
-    rviz_config_file = os.path.join(get_package_share_directory(package_name), 'rviz', 'bot.rviz')
+    rviz_config_file = os.path.join(pkg_dir, 'rviz', 'bot.rviz')
     rviz2 = GroupAction(
         condition=IfCondition(rviz),
         actions=[Node(
@@ -98,6 +99,38 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True}],  # if your node should use sim time
     )
 
+    map_file = os.path.join(pkg_dir, 'maps', 'my_map.yaml')  # Ensure this path is correct
+    amcl_params = os.path.join(pkg_dir, 'config', 'amcl.yaml')  # Ensure this path is correct
+
+    # 1. MAP SERVER: Tells AMCL where the walls are
+    start_map_server = Node(
+        package='nav2_map_server',
+        executable='map_server',
+        name='map_server',
+        output='screen',
+        parameters=[{'yaml_filename': map_file}]
+    )
+
+      # 2. AMCL: The actual localization engine
+    start_amcl = Node(
+        package='nav2_amcl',
+        executable='amcl',
+        name='amcl',
+        output='screen',
+        parameters=[amcl_params] 
+    )
+
+    # 3. LIFECYCLE MANAGER: Necessary in ROS 2 to "activate" Nav2 nodes
+    start_lifecycle_manager = Node(
+        package='nav2_lifecycle_manager',
+        executable='lifecycle_manager',
+        name='lifecycle_manager_localization',
+        output='screen',
+        parameters=[{'use_sim_time': True},
+                    {'autostart': True},
+                    {'node_names': ['map_server', 'amcl']}]
+    )
+
     # Launch them all!
     return LaunchDescription([
         gz_resource_path,
@@ -112,5 +145,8 @@ def generate_launch_description():
         gazebo_client,
         ros_gz_bridge,
         spawn_diff_bot,
-        # aic_node,
+        start_map_server,
+        start_amcl,
+        start_lifecycle_manager,
+        #aic_node,
     ])

@@ -1,6 +1,8 @@
 import numpy as np
 from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, is_pose_in_collision
 from .models import predict_motion, raycast_scan
+import transformations as tf_transformations
+
 
 class ActiveInferenceController:
     def __init__(self, logger):
@@ -24,7 +26,7 @@ class ActiveInferenceController:
         self.current_particles = np.array([
             [p.position.x, p.position.y, self._get_yaw(p.orientation)] 
             for p in pose_array_msg.poses
-        ])
+        ])        
 
     def is_ready(self):
         """Checks if the controller has enough data to make a decision."""
@@ -95,7 +97,6 @@ class ActiveInferenceController:
 
     def _get_yaw(self, q):
         """Helper to get yaw from quaternion."""
-        import tf_transformations
         _, _, yaw = tf_transformations.euler_from_quaternion([q.x, q.y, q.z, q.w])
         return yaw
 

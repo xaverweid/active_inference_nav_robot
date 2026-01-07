@@ -1,0 +1,64 @@
+amcl:
+  ros__parameters:
+    # Use simulation time from /clock topic (important for Gazebo)
+    # should be optimal for the world.sdf file and the diff_drive_robot
+    use_sim_time: true
+    
+    # Frame IDs
+    map_frame_id: "map"          # Global (map) frame
+    odom_frame_id: "odom"           # Odometry frame
+    base_frame_id: "base_link"      # Robot base frame
+    scan_topic: "scan"             # Lidar scan topic
+    
+    # Particle filter configuration
+    max_particles: 1500             # Maximum number of particles
+    min_particles: 500              # Minimum number of particles
+    
+    # Motion model noise (odometry drift)
+    # alpha1: rotation noise from rotation
+    # alpha2: rotation noise from translation
+    # alpha3: translation noise from translation
+    # alpha4: translation noise from rotation
+    alpha1: 0.05
+    alpha2: 0.05
+    alpha3: 0.05
+    alpha4: 0.05
+    alpha5: 0.0
+    
+    # Measurement model (laser beam likelihoods)
+    z_hit: 0.75                    # Weight of hit measurement
+    z_short: 0.1                  # Weight of short measurement
+    z_max: 0.05                     # Weight of max range measurement
+    z_random: 0.1                   # Weight of random measurement
+    sigma_hit: 0.05                  # Std dev of hit measurement
+    lambda_short: 0.1               # Exponential decay for short measurements
+    
+    # Beam configuration
+    max_beams: 60                   # Maximum beams to use from scan
+    do_beamwise_likelihood: false   # Use beamwise likelihood
+    beam_skip_distance: 0.0
+    beam_skip_error_threshold: 0.9
+    beam_skip_threshold: 0.3
+
+    # Likelihood field configuration
+    likelihood_max_dist: 2.0        # Max distance for likelihood field
+    likelihood_max_error: 0.1       # Max error for likelihood
+    
+    # Recovery (handling kidnapped robot / global localization)
+    recovery_alpha_fast: 0.1        # Fast exponential decay (0 = disabled)
+    recovery_alpha_slow: 0.01        # Slow exponential decay (0 = disabled)
+    
+    # Update configuration
+    update_min_d: 0.1              # Min distance threshold for update (meters)
+    update_min_a: 0.1              # Min angle threshold for update (radians)
+    resample_interval: 1            # Resample particles every N updates
+    tf_broadcast: true              # Broadcast map->odom transform
+    transform_tolerance: 0.5        # Transform tolerance in seconds
+    
+    # Publishing
+    save_pose_rate: 5.0             # Rate to publish pose (Hz)
+    
+    # RViz / visualization
+    # Note: AMCL automatically publishes:
+    # - /amcl_pose (PoseWithCovarianceStamped) for current pose estimate
+    # - /particle_cloud (PoseArray) for particle distribution
