@@ -4,6 +4,11 @@ amcl:
     # should be optimal for the world.sdf file and the diff_drive_robot
     use_sim_time: true
     
+    # This allows AMCL to start even without a pose
+    always_reset_initial_pose: true 
+    # This tells it to spread particles everywhere at start
+    initial_pose: [0.0, 0.0, 0.0, 0.0]
+
     # Frame IDs
     map_frame_id: "map"          # Global (map) frame
     odom_frame_id: "odom"           # Odometry frame

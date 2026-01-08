@@ -8,7 +8,7 @@
       <visualize>true</visualize>
       <topic>scan</topic>
       <always_on>true</always_on>        
-      <!-- <gz_frame_id>laser_frame</gz_frame_id> -->
+      <gz_frame_id>laser</gz_frame_id>
       <ray>
         <scan>
           <horizontal>

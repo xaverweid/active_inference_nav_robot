@@ -74,10 +74,11 @@ def generate_launch_description():
     ros_gz_bridge = Node(
         package="ros_gz_bridge",
         executable="parameter_bridge",
-        arguments=[
-            '--ros-args',
-            '-p',
-            f'config_file:={bridge_params}',]
+        parameters=[{
+        'config_file': bridge_params,
+        'use_sim_time': True  # <--- Add this line here
+        }],
+        output='screen'
     )
     
     # Launch Rviz with diff bot rviz file
@@ -102,24 +103,26 @@ def generate_launch_description():
     map_file = os.path.join(pkg_dir, 'maps', 'my_map.yaml')  # Ensure this path is correct
     amcl_params = os.path.join(pkg_dir, 'config', 'amcl.yaml')  # Ensure this path is correct
 
-    # 1. MAP SERVER: Tells AMCL where the walls are
+    # 1. MAP SERVER
     start_map_server = Node(
         package='nav2_map_server',
         executable='map_server',
         name='map_server',
         output='screen',
-        parameters=[{'yaml_filename': map_file}]
+        # Add use_sim_time here
+        parameters=[{'yaml_filename': map_file}, {'use_sim_time': True}]
     )
 
-      # 2. AMCL: The actual localization engine
+    # 2. AMCL
     start_amcl = Node(
         package='nav2_amcl',
         executable='amcl',
         name='amcl',
         output='screen',
-        parameters=[amcl_params] 
+        # Ensure use_sim_time is True here as well
+        parameters=[amcl_params, {'use_sim_time': True}] 
     )
-
+    
     # 3. LIFECYCLE MANAGER: Necessary in ROS 2 to "activate" Nav2 nodes
     start_lifecycle_manager = Node(
         package='nav2_lifecycle_manager',
