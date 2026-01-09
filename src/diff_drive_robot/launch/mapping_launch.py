@@ -7,6 +7,8 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Comm
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
+# used for SLAM mapping, to create a map of the environment which can then be stored inside /maps folder for later use with AMCL localization
+
 def generate_launch_description():
 
     pkg_diff_drive_robot = get_package_share_directory('diff_drive_robot')

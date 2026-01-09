@@ -1,24 +1,33 @@
 amcl:
   ros__parameters:
+    # Set these to 0, but we will override them with a global reset
+    initial_pose:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0
+
+    # Update every 2/3 of a small move (currently FORWARD_SMALL': {'linear': 0.15, 'angular': 0.0}) (see utils.py for Action Commands)) and 1/2 of rotation
+    update_min_d: 0.1
+    update_min_a: 0.2
+    
+    # Some versions of AMCL use this to force a rate
+    save_pose_rate: 0.5
+    # Increase particle count for global localization to cover the whole map
+    min_particles: 500
+    max_particles: 5000
+    # This ensures it doesn't just stick to the initial pose if it's wrong
+    always_reset_initial_pose: true
     # Use simulation time from /clock topic (important for Gazebo)
     # should be optimal for the world.sdf file and the diff_drive_robot
     use_sim_time: true
-    
-    # This allows AMCL to start even without a pose
-    always_reset_initial_pose: true 
-    # This tells it to spread particles everywhere at start
-    initial_pose: [0.0, 0.0, 0.0, 0.0]
 
     # Frame IDs
     map_frame_id: "map"          # Global (map) frame
     odom_frame_id: "odom"           # Odometry frame
     base_frame_id: "base_link"      # Robot base frame
     scan_topic: "scan"             # Lidar scan topic
-    
-    # Particle filter configuration
-    max_particles: 1500             # Maximum number of particles
-    min_particles: 500              # Minimum number of particles
-    
+
     # Motion model noise (odometry drift)
     # alpha1: rotation noise from rotation
     # alpha2: rotation noise from translation

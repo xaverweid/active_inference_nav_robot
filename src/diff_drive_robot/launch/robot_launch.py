@@ -5,7 +5,7 @@ from launch.conditions import IfCondition
 from ament_index_python.packages import get_package_share_directory
 from launch.substitutions import LaunchConfiguration, EnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, GroupAction, SetEnvironmentVariable
+from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, GroupAction, SetEnvironmentVariable, ExecuteProcess, TimerAction
 
 def generate_launch_description():
 
@@ -92,16 +92,10 @@ def generate_launch_description():
                     output='screen',)]
     )
 
-    aic_node = Node(
-        package='active_inference_loc',
-        executable='aic_node',
-        name='aic_node',
-        output='screen',
-        parameters=[{'use_sim_time': True}],  # if your node should use sim time
-    )
 
-    map_file = os.path.join(pkg_dir, 'maps', 'my_map.yaml')  # Ensure this path is correct
-    amcl_params = os.path.join(pkg_dir, 'config', 'amcl.yaml')  # Ensure this path is correct
+    map_file = os.path.join(pkg_dir, 'maps', 'my_map.yaml')  # Ensure this path is correct for the SLAM generated map (see mapping_launch.py if you need to create one)
+    
+    amcl_params = os.path.join(pkg_dir, 'config', 'amcl.yaml')  
 
     # 1. MAP SERVER
     start_map_server = Node(
@@ -134,6 +128,17 @@ def generate_launch_description():
                     {'node_names': ['map_server', 'amcl']}]
     )
 
+    # AMCL trigger global localization service call at startup
+    init_global_localization = TimerAction(
+        period=3.0, # Wait for AMCL to fully activate
+        actions=[
+            ExecuteProcess(
+                cmd=['ros2', 'service', 'call', '/reinitialize_global_localization', 'std_srvs/srv/Empty', '{}'],
+                output='screen'
+            )
+        ]
+    )
+
     # Launch them all!
     return LaunchDescription([
         gz_resource_path,
@@ -151,5 +156,5 @@ def generate_launch_description():
         start_map_server,
         start_amcl,
         start_lifecycle_manager,
-        #aic_node,
+        init_global_localization,
     ])
