@@ -1,43 +1,52 @@
-The active_inference_loc package implements high-level cognitive control and mapping capabilities for the differential drive robot. It is designed to facilitate Active Inference—a framework where the robot chooses actions (like exploration) to minimize uncertainty and maximize information gain about its environment.
+# Active Inference Localization
 
-This package provides two primary functionalities:
+This package contains the core intelligence for an autonomous robot using the Active Inference Framework (AIF). Unlike traditional navigation which follows pre-defined paths, this "Brain" node treats global localization as an inference problem—choosing actions that satisfy both epistemic value (information gain) and pragmatic value (collision avoidance)
 
-    
-    Active Inference Control (AIC): A framework for autonomous decision-making based on the belief states provided by the robot's localization system.
 
-Key Functionalities
+## Work in progress
+The package is still being worked on and in development
 
-    Online Asynchronous Mapping: Utilizes slam_toolbox to create high-resolution maps while the robot is in motion. This allows for the creation of .yaml and .pgm files used later by the AMCL localization system.
 
-    Active Exploration: Designed to interface with the robot's /particle_cloud and /scan topics to drive movement based on the reduction of "expected free energy" (epistemic value).
+## Supported on
 
-    Visualization Suite: Includes pre-configured RViz setups specifically for mapping and belief-state monitoring.
+Supported for [Ubuntu 24.04](https://releases.ubuntu.com/noble/) & [ROS2 Jazzy](https://docs.ros.org/en/jazzy/Installation.html)  compatibility with other versions has not been checked.
 
-    Modular Architecture: The launch system is designed to be "opt-in," meaning it can run alongside the base robot simulation without conflict.
+## Implementation
 
-🛠 Software Stack
-Component	Technology	Description
-Mapping Engine	Slam Toolbox	Asynchronous SLAM for real-time map generation.
-Control Logic	Active Inference	Custom Python nodes implementing the AIC mathematical framework.
-Communication	ROS 2 Topics	Interfaces with /scan, /odom, and /particle_cloud.
-Visualization	RViz2	Custom configurations for mapping (mapping.rviz).
-🚦 Usage
+### Inputs (Observation)
 
-This package is intended to be launched alongside the diff_drive_robot base simulation.
-1. Discovery/Mapping Mode
+The node subscribes to the following topics to form its "Belief" about the world:
 
-To start the robot and begin creating a new map of the environment:
-Bash
+    /particle_cloud (PoseArray): The posterior probability distribution of the robot's state provided by AMCL.
 
-# Terminal 1: Launch the robot and simulation
-ros2 launch diff_drive_robot robot_launch.py
+    /scan (LaserScan): Real-time proximity data to evaluate collision risk (Pragmatic Value).
 
-# Terminal 2: Start the mapping process
-ros2 launch active_inference_loc mapping_launch.py enable_mapping:=true
+    /odom (Odometry): Motion feedback to internalize the results of previous actions.
 
-2. Active Inference Control (AIC)
+### Outputs (Action)
 
-To launch the decision-making "brain" that will control the robot's discrete actions:
-Bash
+    /cmd_vel (Twist): Discrete velocity commands sent to the robot's motors based on the optimal policy selected.
 
+## How it Works
+
+The AIC process follows a recurring Perception-Action loop:
+
+Belief Summarization: The node receives thousands of particles from AMCL and uses K-Means Clustering to simplify the distribution.
+
+   
+Expected Free Energy (EFE) Calculation: For each discrete action (e.g., FORWARD_SMALL, ROTATE_LEFT), the node predicts:
+
+        Epistemic Value: How much will this move reduce my entropy? (Information Gain)
+
+        Pragmatic Value: How likely is this move to cause a collision or move away from my target?
+
+        Action Selection: The action with the lowest EFE is published to /cmd_vel.
+
+## Launch & Configuration
+
+This node is designed to be launched after the base robot simulation is active (diff_drive_robot robot_launch.py)
+
+
+### Launch the AIC Brain
 ros2 launch active_inference_loc aic_launch.py
+
