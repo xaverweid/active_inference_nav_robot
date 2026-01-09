@@ -1,21 +1,21 @@
 # Simulated Robots Package
 
-Simulation for differential drive robots using ROS2 Jazzy and Gazebo Harmonic. This package provides all of the necessary files to get a simulated robot up and running. This includes the urdf, parameters and launch files for a robot with a lidar sensor and tele-operated navigation. More sensors and functionalities will be added in future.
+This ROS 2 package provides a complete simulation environment for a differential drive robot using Gazebo. It integrates lidar sensor and tele-operated navigation for the robot, as well as full navigation stack for localization (Adaptive Monte Carlo Localization, AMCL), map serving, and sensor bridging, designed specifically as a foundation for advanced control algorithms like Active Inference.
 
 ## Branches
 
 This repository has two main branches:
 
 - **`main`**: Base repository with core robot simulation functionality including URDF, Gazebo simulation, and basic tele-operation
-- **`mapping`**: Extended branch that adds mapping capabilities using SLAM Toolbox and robot localization with Extended Kalman Filter (EKF)
+- **`mapping`**: Extended branch that adds mapping capabilities using SLAM Toolbox, which can be used for map generation (required for AMCL functionality)
+
 
 ## Work in progress
-
 The package is still being worked on and in development
 
 ## Supported on
 
-Supported for [Ubuntu 24.04](https://releases.ubuntu.com/noble/) & [ROS2 Jazzy](https://docs.ros.org/en/jazzy/Installation.html) but compatibility with other versions has not been checked.
+Supported for [Ubuntu 24.04](https://releases.ubuntu.com/noble/) & [ROS2 Jazzy](https://docs.ros.org/en/jazzy/Installation.html)  compatibility with other versions has not been checked.
 
 ## Install Required ROS 2 Packages
 
@@ -24,13 +24,18 @@ Supported for [Ubuntu 24.04](https://releases.ubuntu.com/noble/) & [ROS2 Jazzy](
 Make sure to install the following ROS 2 Jazzy Packages:
 
 ```bash
-sudo apt install -y                         \
-   ros-jazzy-ros-gz                        \
-   ros-jazzy-ros-gz-bridge                 \
-   ros-jazzy-joint-state-publisher         \
-   ros-jazzy-xacro                         \
-   ros-jazzy-teleop-twist-keyboard         \
-   ros-jazzy-teleop-twist-joy 
+sudo apt install -y \
+  ros-jazzy-ros-gz \
+  ros-jazzy-ros-gz-bridge \
+  ros-jazzy-joint-state-publisher \
+  ros-jazzy-robot-state-publisher \
+  ros-jazzy-xacro \
+  ros-jazzy-nav2-amcl \
+  ros-jazzy-nav2-map-server \
+  ros-jazzy-nav2-lifecycle-manager \
+  ros-jazzy-nav2-msgs \
+  ros-jazzy-teleop-twist-keyboard \
+  ros-jazzy-teleop-twist-joy
 ```
 
 ### Additional Packages (Required for `mapping` branch)
@@ -49,42 +54,33 @@ To use this package please download all of the necessary dependencies first and 
 
 ### Main Branch
 
-For the base robot simulation, clone the main branch:
+For the robot simulation, clone the main branch:
 
 ```bash
 mkdir -p ros2_ws/src
 cd ros2_ws/src
-git clone https://github.com/adoodevv/diff_drive_robot.git
+git clone https://github.com/xaverweid/active_inference_nav_robot.git
 cd ..
-colcon build --packages-select diff_drive_robot --symlink-install
-```
-
-### Mapping Branch
-
-To use the mapping features, clone the `mapping` branch directly:
-
-```bash
-mkdir -p ros2_ws/src
-cd ros2_ws/src
-git clone -b mapping https://github.com/adoodevv/diff_drive_robot.git
-cd ..
-colcon build --packages-select diff_drive_robot --symlink-install
+colcon build --packages-select active_inference_nav_robot --symlink-install
 ```
 
 ## Usage
 
 ### Main Branch - Basic Robot Simulation
 
+The primary launch file (robot_launch.py) automates the complex setup required for a mobile robot to "know where it is" within a known environment. It handles everything from spawning the physical model in a virtual world to initializing the particle filter for localization.
+
 After sourcing ROS and this package, launch the 2-wheeled differential drive robot simulation:
 
 ```bash
+cd ~/ros2_ws
 source install/setup.bash
-ros2 launch diff_drive_robot robot.launch.py 
+ros2 launch diff_drive_robot robot_launch.py 
 ```
 
 #### Controlling the robot
 
-Currently, only keyboard control works. Run this in another terminal:
+If you want to control the robot by keyboard, run this in another terminal:
 
 ```bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard 
@@ -92,12 +88,11 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 
 ![Gazebo Simulation](assets/gazebo_mapping.png)
 
-### Mapping Branch - Mapping and Localization
+### Mapping Branch - Mapping and Localization - Currently no functionality
 
 The `mapping` branch extends the base functionality with:
 
 - **SLAM Toolbox**: For mapping the environment
-- **Extended Kalman Filter (EKF)**: For sensor fusion and improved odometry estimation
 - **Enhanced RViz configuration**: Pre-configured for mapping visualization
 
 #### New Configuration Files
@@ -105,7 +100,6 @@ The `mapping` branch extends the base functionality with:
 The mapping branch includes additional configuration files:
 
 - `config/slam_toolbox_mapping.yaml`: Configuration for SLAM Toolbox mapping mode
-- `config/ekf.yaml`: Extended Kalman Filter parameters for sensor fusion (odometry and IMU)
 
 #### Launching the Mapping System
 
@@ -114,20 +108,20 @@ The mapping system requires launching two separate terminals:
 **Terminal 1 - Robot Simulation:**
 ```bash
 source install/setup.bash
-ros2 launch diff_drive_robot robot.launch.py
+ros2 launch diff_drive_robot robot_launch.py
 ```
 
 This launches:
 - Gazebo simulation
 - Robot State Publisher
 - Gazebo-ROS bridge
-- Extended Kalman Filter node
 - Robot spawner
+- AMCL with map_server and lifecycle_manager
 
 **Terminal 2 - Mapping:**
 ```bash
 source install/setup.bash
-ros2 launch diff_drive_robot mapping.launch.py
+ros2 launch diff_drive_robot mapping_launch.py
 ```
 
 This launches:
@@ -152,6 +146,10 @@ Once you've mapped your environment, you can save it using the SLAM Toolbox plug
 ros2 run nav2_map_server map_saver_cli -f ~/my_map
 ```
 
-## TODO
+## Credits & Acknowledgments
 
-Package is still being worked on, though the core functionality is pretty much done, I will be adding some more sensors and functionalities soon.
+This package utilizes URDF models, Gazebo simulation environments, and base configurations adapted from the diff_drive_robot repository by adoodevv.
+
+Modifications:
+
+    Integrated Nav2 AMCL with automated global localization triggers.
