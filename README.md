@@ -1,4 +1,16 @@
-Active Inference Localization Algorithm - separated between the ROS2 package (diff_drive_robot) and the python Active Inference Control package (active_inference_loc)
+Active Inference Localization Algorithm - separated between the two-wheel drive robot packge (diff_drive_robot) and the Active Inference Control package (active_inference_loc)
+
+# diff_drive_robot
+
+This ROS 2 package provides a complete simulation environment for a differential drive robot using Gazebo Harmonic. It integrates the full navigation stack for localization (AMCL), map serving, and sensor bridging, designed specifically as a foundation for advanced control algorithms like Active Inference.
+
+Overview
+
+The primary launch file (robot_launch.py) automates the complex setup required for a mobile robot to "know where it is" within a known environment. It handles everything from spawning the physical model in a virtual world to initializing the particle filter for localization.
+
+# active_inference_loc
+
+
 
 System: ROS2 Jazzy, Gazebo Harmonic
 
