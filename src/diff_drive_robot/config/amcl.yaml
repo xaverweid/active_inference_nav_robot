@@ -1,11 +1,16 @@
 amcl:
   ros__parameters:
-    # Set these to 0, but we will override them with a global reset
-    initial_pose:
-      x: 0.0
-      y: 0.0
-      z: 0.0
-      yaw: 0.0
+    # Set these to 0, but we will override them with a global reset as soon as aic_launch.py starts
+    set_initial_pose: true
+
+    initial_pose_x: 0.0
+    initial_pose_y: 0.0
+    initial_pose_a: 0.0
+
+    initial_cov_xx: 0.5
+    initial_cov_yy: 0.5
+    initial_cov_aa: 0.5
+
 
     # Update every 2/3 of a small move (currently FORWARD_SMALL': {'linear': 0.15, 'angular': 0.0}) (see utils.py for Action Commands)) and 1/2 of rotation
     update_min_d: 0.1

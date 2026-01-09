@@ -1,6 +1,6 @@
 import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, TimerAction, ExecuteProcess
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -42,9 +42,26 @@ def generate_launch_description():
         ],
         condition=IfCondition(LaunchConfiguration('enable_aic')),
     )
+
+    # Service call to initialize global localization (and output first particlecloud) when aic is enabled after a short delay
+    init_global_localization = TimerAction(
+    period=2.0,  # Short delay so AIC node is fully up
+    actions=[
+        ExecuteProcess(
+            cmd=[
+                'ros2', 'service', 'call',
+                '/reinitialize_global_localization',
+                'std_srvs/srv/Empty',
+                '{}'
+            ],
+            output='screen'
+        )
+    ]
+)
     
     return LaunchDescription([
         use_sim_time_arg,
         enable_aic_arg,
         aic_control_node,
+        init_global_localization,
     ])

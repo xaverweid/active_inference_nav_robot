@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from ament_copyright.main import main
-import pytest
+import pytest # type: ignore
 
 
 # Remove the `skip` decorator once the source file(s) have a copyright header

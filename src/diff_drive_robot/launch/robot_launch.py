@@ -128,16 +128,16 @@ def generate_launch_description():
                     {'node_names': ['map_server', 'amcl']}]
     )
 
-    # AMCL trigger global localization service call at startup
-    init_global_localization = TimerAction(
-        period=3.0, # Wait for AMCL to fully activate
-        actions=[
-            ExecuteProcess(
-                cmd=['ros2', 'service', 'call', '/reinitialize_global_localization', 'std_srvs/srv/Empty', '{}'],
-                output='screen'
-            )
-        ]
-    )
+    # AMCL trigger global localization service call at startup - was moved to aic_launch.py
+    # init_global_localization = TimerAction(
+    #     period=3.0, # Wait for AMCL to fully activate
+    #     actions=[
+    #         ExecuteProcess(
+    #             cmd=['ros2', 'service', 'call', '/reinitialize_global_localization', 'std_srvs/srv/Empty', '{}'],
+    #             output='screen'
+    #         )
+    #     ]
+    # )
 
     # Launch them all!
     return LaunchDescription([
@@ -156,5 +156,5 @@ def generate_launch_description():
         start_map_server,
         start_amcl,
         start_lifecycle_manager,
-        init_global_localization,
+        #init_global_localization,
     ])
