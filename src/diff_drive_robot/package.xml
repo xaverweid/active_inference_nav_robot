@@ -4,7 +4,8 @@
   <name>diff_drive_robot</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="adoojonathan412@gmail.com">adoodevv</maintainer>
+  <maintainer email="fxweidinger@googlemail.com">xaverweid</maintainer>
+  <author email="adoojonathan412@gmail.com">adoodevv</author>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
