@@ -1,17 +1,16 @@
 import numpy as np
 
 # --- 1. Motion Model ---
-def predict_motion(pose_4d, action_type, action_dict):
+def predict_motion(pose_4d, action_type, action_dict, dt: float = 1.0):
     """
-    Predicts the future state of a cluster center.
-    Gets a 4D pose object [x, y, cos(theta), sin(theta)], action type and the whole action dictionary, 
-    returns also a 4D numpy array 
-    action_type: String matching your ACTION_EFFECTS keys
+    Predicts the future state of a cluster center over a fixed time step dt.
+    pose_4d: [x, y, cos(theta), sin(theta)]
+    action_type: string key into action_dict containing linear (m/s) and angular (rad/s)
+    dt: time delta in seconds the action is applied for (discrete step)
+    Returns: new 4D pose numpy array [x, y, cos(theta), sin(theta)]
     """
     # 1. Extract current state
     x,y, ctheta, stheta = pose_4d
-    
-    # Using your arctan2 logic for robust 2D yaw extraction from Quaternion
     theta = np.arctan2(stheta, ctheta) 
 
     # 2. Get effects directly from your ACTION_EFFECTS dictionary
@@ -22,25 +21,28 @@ def predict_motion(pose_4d, action_type, action_dict):
     
     # 3. Standard Unicycle Kinematics (Euler Integration)
     # We update orientation first, then position (Mid-point approximation)
-    new_theta = theta + w
+    delta_theta = w  * dt
+    new_theta = theta + delta_theta
+
     
     # We use the average heading for the translation to be more accurate
-    move_angle = theta + (w / 2.0)
+    move_distance = v * dt
+    move_angle = theta + delta_theta / 2.0
     
-    new_x = x + v * np.cos(move_angle)
-    new_y = y + v * np.sin(move_angle)
-    
-    # 4. Return as 4D [x, y, cos, sin]
+    new_x = x + move_distance * np.cos(move_angle)
+    new_y = y + move_distance * np.sin(move_angle)
+
     return np.array([new_x, new_y, np.cos(new_theta), np.sin(new_theta)])
 
+
 # --- 2. Simplified Raycaster (Needs the map!) ---
-# You'll need the map as a numpy array and its metadata (resolution, origin)
-def raycast_scan(poses_4d, map_msg):
+# You'll need the map as a 2D numpy array and its metadata (resolution, origin)
+def raycast_scan(poses_4d, map_2d, map_metadata):
     """
     Input: 
-      - particles: gets 4D numpy array of shape (N, 4) [x, y, cos(theta), sin(theta)]
-      - map_msg: The full ROS OccupancyGrid message
-    
+      - poses4d: gets 4D numpy array of shape (N, 4) [x, y, cos(theta), sin(theta)]
+      - map_2d: The full ROS OccupancyGrid message as a numpy array
+      - map_metadata: The metadata of the map (resolution, origin)
     Output:
       - scans: Nx8 numpy array (N particles, 8 beams per particle)
     Each beam gives the distance to the nearest obstacle in that direction.
@@ -48,12 +50,10 @@ def raycast_scan(poses_4d, map_msg):
     """
     
     # 1. Unpack Map Data (Do this once outside loop if possible for speed)
-    width = map_msg.info.width
-    height = map_msg.info.height
-    resolution = map_msg.info.resolution
-    origin_x = map_msg.info.origin.position.x
-    origin_y = map_msg.info.origin.position.y
-    map_data = np.array(map_msg.data) # Convert tuple to numpy array for speed
+    resolution = map_metadata['resolution']
+    origin_x = map_metadata['origin_x']
+    origin_y = map_metadata['origin_y']
+    height, width = map_2d.shape
 
     # 2. Define Laser Angles (e.g., 16 beams: for 180 degree every 10-15 degree)
     # maybe reduce to 8 beams since is a good balance between speed and accuracy for active inference
@@ -80,36 +80,31 @@ def raycast_scan(poses_4d, map_msg):
             
             # Start position (in World Coords)
             curr_x, curr_y = x, y
-            dist_accumulated = 0.0
-            found_wall = False
+            dist = 0.0
+            hit = False
             
             # 5. WALK THE RAY (The "Traversal")
-            while dist_accumulated < max_range:
+            while dist < max_range:
                 # Convert World (meters) -> Grid (indices)
-                grid_x = int((curr_x - origin_x) / resolution)
-                grid_y = int((curr_y - origin_y) / resolution)
+                gx = int((curr_x - origin_x) / resolution)
+                gy = int((curr_y - origin_y) / resolution)
                 
-                # Check Bounds
-                if grid_x < 0 or grid_x >= width or grid_y < 0 or grid_y >= height:
-                    # Ray went off map
+                # Faster bounds and collision check using 2D array
+                if 0 <= gx < width and 0 <= gy < height:
+                    if map_2d[gy, gx] > 50: # [row, col] is [y, x]
+                        particle_ranges.append(dist)
+                        hit = True
+                        break
+                else:
                     particle_ranges.append(max_range)
-                    found_wall = True
+                    hit = True
                     break
                 
-                # Check Map Collision
-                index = grid_y * width + grid_x
-                if map_data[index] > 50: # Standard threshold for "Occupied"
-                    # Hit a wall!
-                    particle_ranges.append(dist_accumulated)
-                    found_wall = True
-                    break
-                
-                # Step forward
                 curr_x += dx
                 curr_y += dy
-                dist_accumulated += resolution
+                dist += resolution
             
-            if not found_wall:
+            if not hit:
                 particle_ranges.append(max_range)
         
         all_scans.append(particle_ranges)

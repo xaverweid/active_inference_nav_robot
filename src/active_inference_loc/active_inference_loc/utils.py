@@ -23,6 +23,8 @@ ACTION_EFFECTS = {
     'TURN_RIGHT':    {'linear': 0.15, 'angular': -0.3}
 }
 
+# Particle Clustering Utility
+
 class ParticleClusturer:
     def __init__(self, n_clusters=5):
         """
@@ -99,6 +101,8 @@ class ParticleClusturer:
             cluster_weights.append(np.sum(weights[mask]))
             
         return cluster_poses, cluster_weights
+
+# Utility Functions (non-class): generic ROS/map/geometry conversions
 
 def ros_pose_to_np(pose_msg):
     # Convert ROS Pose to numpy array [x, y, theta]

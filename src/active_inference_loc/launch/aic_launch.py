@@ -24,7 +24,7 @@ def generate_launch_description():
     
     enable_aic_arg = DeclareLaunchArgument(
         'enable_aic',
-        default_value='false',
+        default_value='true',
         description='Enable active_inference_control node'
     )
 

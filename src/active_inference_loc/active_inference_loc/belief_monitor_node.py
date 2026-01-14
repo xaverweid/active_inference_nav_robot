@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, DurabilityPolicy
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 from nav_msgs.msg import OccupancyGrid
 from geometry_msgs.msg import PoseArray
 from std_msgs.msg import Float32MultiArray
@@ -9,6 +9,7 @@ from matplotlib.patches import Ellipse
 import numpy as np
 from sklearn.cluster import KMeans
 from nav2_msgs.msg import ParticleCloud
+import threading
 
 # Importing your existing utilities
 from .utils import get_map_metadata, ParticleClusturer, get_covariance_ellipse
@@ -22,12 +23,19 @@ class BeliefMonitorNode(Node):
         self.map_data = None
         self.current_metrics = [0.0, 0.0, 0.0] # [Epistemic, Pragmatic, Total G]
 
-        # 2. QoS for Map
+        # 2. QoS for Map (static, transient_local)
         map_qos = QoSProfile(durability=DurabilityPolicy.TRANSIENT_LOCAL, depth=1)
 
-        # 3. Subscriptions
+        # 3. QoS for ParticleCloud (AMCL publishes with BEST_EFFORT, so we must subscribe with it too)
+        particle_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            depth=10
+        )
+
+        # 4. Subscriptions
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, map_qos)
-        self.cloud_sub = self.create_subscription(ParticleCloud, '/particle_cloud', self.cloud_callback, 10)
+        self.cloud_sub = self.create_subscription(ParticleCloud, '/particle_cloud', self.cloud_callback, particle_qos)
         self.metrics_sub = self.create_subscription(Float32MultiArray, '/aic_metrics', self.metrics_callback, 10)
 
         # 4. Matplotlib Setup
@@ -40,6 +48,8 @@ class BeliefMonitorNode(Node):
                                       verticalalignment='top', family='monospace', fontsize=9,
                                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray'))
 
+        plt.show()
+        
         self.get_logger().info("Belief Monitor Node with AIC Dashboard Started.")
 
     def metrics_callback(self, msg):
@@ -59,90 +69,116 @@ class BeliefMonitorNode(Node):
             self.ax.set_title("Robot Posterior Belief & AIC Metrics")
 
     def cloud_callback(self, msg):
-        if self.map_data is None: return
+        if self.map_data is None: 
+            self.get_logger().warning("Map data not yet received; cannot plot particles.")
+            return
 
-        # --- A. DATA PROCESSING ---
-        # Use the 4D converter
-        # raw points needs to be 4D for clustering
-        raw_points, raw_weights = self.clusturer.cloud_to_numpy(msg)
-        n_particles = len(raw_points)
         
-        # 1. Clustering for Brain & Metrics (using 4D)
-        # representative_poses: List of (x, y, cos(theta), sin(theta))
-        representative_poses, cluster_weights = self.clusturer.get_representative_clusters_from_np(raw_points, raw_weights)
-
-        # 2. Uncertainty Calculations
-        shannon_h = -np.sum([w * np.log(w + 1e-9) for w in cluster_weights])
-        sum_sq_w = np.sum(raw_weights**2)
-        ess_val = 1.0 / (sum_sq_w + 1e-9)
-        diversity_ratio = (ess_val / n_particles) * 100
-
-        # --- B. VISUALIZATION ---
-        for artist in self.ax.collections + self.ax.patches + self.ax.texts:
-            if artist != self.dashboard: artist.remove()
-
-        # Plot Raw Particles (X and Y only)
-        self.ax.scatter(raw_points[:, 0], raw_points[:, 1], s=1, c='blue', alpha=0.1)
-
-        # Re-run K-means just for the labels to draw ellipses correctly
-        # Note: We use raw_points[:, :2] if you want spatial ellipses only,
-        # or raw_points if you want orientation to influence cluster shapes.
-        kmeans_viz = KMeans(n_clusters=len(representative_poses), n_init=10)
-        labels = kmeans_viz.fit_predict(raw_points) 
-
-        # Unpacking 4D into 3D for visualization
-        for i, (mx, my, ctheta, stheta) in enumerate(representative_poses):
-            mtheta = np.arctan2(stheta, ctheta)
-            cluster_mask = (labels == i)
-            if np.sum(cluster_mask) < 3: continue
+        try:
+            # --- A. DATA PROCESSING ---
+            # Use the 4D converter
+            # raw points needs to be 4D for clustering
+            raw_points, raw_weights = self.clusturer.cloud_to_numpy(msg)
+            n_particles = len(raw_points)
             
-            # Pass only X and Y to the ellipse function
-            res = get_covariance_ellipse(raw_points[cluster_mask, :2])
-            if res:
-                width, height, angle = res
-                color = plt.cm.plasma(i / self.clusturer.n_clusters)
-                
-                ell = Ellipse(
-                    xy=(mx, my), 
-                    width=width, 
-                    height=height, 
-                    angle=angle, 
-                    edgecolor=color, 
-                    fc=color, 
-                    lw=2, 
-                    alpha=0.3
-                )
-                self.ax.add_patch(ell)
-                
-                # Draw a small "heading" line to show the cluster's yaw
-                # Use ctheta and stheta for direction
-                dx = 0.2 * ctheta
-                dy = 0.2 * stheta           
-                self.ax.arrow(mx, my, dx, dy, color='red', head_width=0.05)
+            if n_particles == 0:
+                self.get_logger().warning("Received empty particle cloud.")
+                return
+            # 1. Clustering for Brain & Metrics (using 4D)
+            # representative_poses: List of (x, y, cos(theta), sin(theta))
+            representative_poses, cluster_weights = self.clusturer.get_representative_clusters_from_np(raw_points, raw_weights)
 
-        # --- C. DASHBOARD UPDATE ---
-        # (Surprise logic remains same)
-        current_surprise = -np.log(np.max(cluster_weights) + 1e-9) 
-        
-        table_text = (
-            f"▼ BELIEF METRICS\n"
-            f"Shannon Entropy (H):  {shannon_h:.3f} nats\n"
-            f"Filter Diversity:     {diversity_ratio:.1f}%\n"
-            f"Variational F:        {current_surprise:.2f}\n"
-            f"-------------------------------\n"
-            f"▼ AIC POLICY (G)\n"
-            f"Expected Epistemic:   {self.current_metrics[0]:.2f}\n"
-            f"Expected Pragmatic:   {self.current_metrics[1]:.2f}\n"
-            f"Total Expected G:     {self.current_metrics[2]:.2f}"
-        )
-        self.dashboard.set_text(table_text)
-        self.fig.canvas.draw()
+            # 2. Uncertainty Calculations
+            shannon_h = -np.sum([w * np.log(w + 1e-9) for w in cluster_weights])
+            sum_sq_w = np.sum(raw_weights**2)
+            ess_val = 1.0 / (sum_sq_w + 1e-9)
+            diversity_ratio = (ess_val / n_particles) * 100
+
+            # --- B. VISUALIZATION ---
+            for artist in list(self.ax.collections) + list(self.ax.patches):
+                artist.remove()
+            
+            # Also clear previous text annotations (except dashboard)
+            for txt in list(self.ax.texts):
+                if txt != self.dashboard:
+                    txt.remove()
+
+            # Plot Raw Particles (X and Y only)
+            self.ax.scatter(raw_points[:, 0], raw_points[:, 1], s=1, c='blue', alpha=0.1, label='Particles')
+
+            # Re-run K-means just for the labels to draw ellipses correctly
+            # Note: We use raw_points[:, :2] if you want spatial ellipses only,
+            # or raw_points if you want orientation to influence cluster shapes.
+            kmeans_viz = KMeans(n_clusters=len(representative_poses), n_init=10)
+            labels = kmeans_viz.fit_predict(raw_points) 
+
+            # Unpacking 4D into 3D for visualization
+            for i, (mx, my, ctheta, stheta) in enumerate(representative_poses):
+                mtheta = np.arctan2(stheta, ctheta)
+                cluster_mask = (labels == i)
+                if np.sum(cluster_mask) < 3: 
+                    continue
+                
+                # Pass only X and Y to the ellipse function
+                res = get_covariance_ellipse(raw_points[cluster_mask, :2])
+                if res:
+                    width, height, angle = res
+                    color = plt.cm.plasma(i / self.clusturer.n_clusters)
+                    
+                    ell = Ellipse(
+                        xy=(mx, my), 
+                        width=width, 
+                        height=height, 
+                        angle=angle, 
+                        edgecolor=color, 
+                        fc=color, 
+                        lw=2, 
+                        alpha=0.3
+                    )
+                    self.ax.add_patch(ell)
+                    
+                    # Draw a small "heading" line to show the cluster's yaw
+                    # Use ctheta and stheta for direction
+                    dx = 0.2 * ctheta
+                    dy = 0.2 * stheta           
+                    self.ax.arrow(mx, my, dx, dy, color='red', head_width=0.05, head_length=0.05)
+
+            # --- C. DASHBOARD UPDATE ---
+            # (Surprise logic remains same)
+            current_surprise = -np.log(np.max(cluster_weights) + 1e-9) 
+            
+            table_text = (
+                f"▼ BELIEF METRICS\n"
+                f"Shannon Entropy (H):  {shannon_h:.3f} nats\n"
+                f"Filter Diversity:     {diversity_ratio:.1f}%\n"
+                f"Variational F:        {current_surprise:.2f}\n"
+                f"-------------------------------\n"
+                f"▼ AIC POLICY (G)\n"
+                f"Expected Epistemic:   {self.current_metrics[0]:.2f}\n"
+                f"Expected Pragmatic:   {self.current_metrics[1]:.2f}\n"
+                f"Total Expected G:     {self.current_metrics[2]:.2f}"
+            )
+            self.dashboard.set_text(table_text)
+
+            #Redraw the canvas
+            self.fig.canvas.draw()
+            self.fig.canvas.flush_events()
+
+        except Exception as e:
+            self.get_logger().error(f"Error in cloud_callback: {e}", exc_info=True)
 
 def main(args=None):
     rclpy.init(args=args)
     node = BeliefMonitorNode()
+    
+    # Spin in a separate thread so matplotlib event loop can run
+    executor_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    executor_thread.start()
+    
     try:
-        rclpy.spin(node)
+        # Keep main thread alive for matplotlib
+        while rclpy.ok():
+            plt.pause(0.1)
     except KeyboardInterrupt:
         pass
     finally:
