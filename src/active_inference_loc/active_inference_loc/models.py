@@ -91,7 +91,7 @@ def raycast_scan(poses_4d, map_2d, map_metadata):
                 
                 # Faster bounds and collision check using 2D array
                 if 0 <= gx < width and 0 <= gy < height:
-                    if map_2d[gy, gx] > 50: # [row, col] is [y, x]
+                    if map_2d[gy, gx] > 50 or map_2d[gy, gx] == -1: # [row, col] is [y, x], -1 means unknown
                         particle_ranges.append(dist)
                         hit = True
                         break

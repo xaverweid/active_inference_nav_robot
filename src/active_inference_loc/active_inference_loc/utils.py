@@ -110,20 +110,22 @@ def ros_pose_to_np(pose_msg):
                      2 * np.arctan2(pose_msg.orientation.z, pose_msg.orientation.w)])  # Assuming quaternion to yaw
 
 def get_map_metadata(map_msg):
-    # Extract metadata from OccupancyGrid
-    resolution = map_msg.info.resolution
-    origin_x = map_msg.info.origin.position.x
-    origin_y = map_msg.info.origin.position.y
-    width = map_msg.info.width
-    height = map_msg.info.height
-    data = np.array(map_msg.data).reshape((height, width))
+    """
+    Extracts metadata and reshapes map data into a 2D grid.
+    Returns data as (Height, Width) to allow [y, x] indexing.
+    """
+    info = map_msg.info
+    
+    # Use int8 to save memory; ROS values are -1, 0, or 100
+    data_2d = np.array(map_msg.data, dtype=np.int8).reshape((info.height, info.width))
+    
     return {
-        'resolution': resolution,
-        'origin_x': origin_x,
-        'origin_y': origin_y,
-        'width': width,
-        'height': height,
-        'data': data
+        'resolution': info.resolution,
+        'origin_x':   info.origin.position.x,
+        'origin_y':   info.origin.position.y,
+        'width':      info.width,
+        'height':     info.height,
+        'data':       data_2d
     }
 
 def is_pose_in_collision(pose, map_metadata, threshold=50):
@@ -140,10 +142,17 @@ def is_pose_in_collision(pose, map_metadata, threshold=50):
     grid_x = int((x - origin_x) / resolution)
     grid_y = int((y - origin_y) / resolution)
     
-    # Check bounds and occupancy
+    ## 3. Safety: Check Bounds first
     if 0 <= grid_x < width and 0 <= grid_y < height:
-        return data[grid_y, grid_x] >= threshold  # Occupied if >= threshold
-    return True  # Out of bounds = collision
+        cell_value = data[grid_y, grid_x]
+
+        # Check for Wall (usually 100) or Unknown (-1)
+        if cell_value >= threshold or cell_value == -1:
+            return True # Collision or Danger
+            
+        return False # Safe (Free space is 0)
+        
+    return True # Out of bounds is always a collision
     
 def get_covariance_ellipse(cluster_points, n_std=2.0):
     """
