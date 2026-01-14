@@ -30,6 +30,8 @@ setup(
     entry_points={
         'console_scripts': [
             'aic_node=active_inference_loc.aic_node:main',
+            'belief_monitor = active_inference_loc.belief_monitor_node:main',
         ],
     },
+    
 )

@@ -1,64 +1,44 @@
 import numpy as np
 
 # --- 1. Motion Model ---
-def predict_motion(pose_obj, action_type):
+def predict_motion(pose_4d, action_type, action_dict):
     """
     Predicts the future state of a cluster center.
-    pose_obj: A geometry_msgs/Pose object (from your Clusturer)
+    Gets a 4D pose object [x, y, cos(theta), sin(theta)], action type and the whole action dictionary, 
+    returns also a 4D numpy array 
     action_type: String matching your ACTION_EFFECTS keys
     """
     # 1. Extract current state
-    x = pose_obj.position.x
-    y = pose_obj.position.y
+    x,y, ctheta, stheta = pose_4d
     
     # Using your arctan2 logic for robust 2D yaw extraction from Quaternion
-    theta = 2 * np.arctan2(pose_obj.orientation.z, pose_obj.orientation.w)
-    
-    # 2. Define step sizes (Should match your ACTION_EFFECTS values)
+    theta = np.arctan2(stheta, ctheta) 
+
+    # 2. Get effects directly from your ACTION_EFFECTS dictionary
     # These could also be pulled directly from ACTION_EFFECTS if you import it
-    linear_step = 0.15   # Meters for 'SMALL' actions
-    angular_step = 0.4   # Radians for 'ROTATE' actions
+    effect = action_dict.get(action_type, {'linear': 0.0, 'angular': 0.0})
+    v = effect['linear']
+    w = effect['angular']
     
-    # 3. Apply Kinematics
-    if action_type == 'FORWARD_SMALL':
-        x += linear_step * np.cos(theta)
-        y += linear_step * np.sin(theta)
-        
-    elif action_type == 'FORWARD_LARGE':
-        x += (linear_step * 2) * np.cos(theta)
-        y += (linear_step * 2) * np.sin(theta)
-        
-    elif action_type == 'ROTATE_LEFT':
-        theta += angular_step
-        
-    elif action_type == 'ROTATE_RIGHT':
-        theta -= angular_step
-        
-    elif action_type == 'TURN_LEFT':
-        # Combined motion
-        theta += angular_step * 0.5
-        x += linear_step * np.cos(theta)
-        y += linear_step * np.sin(theta)
-        
-    elif action_type == 'SPIN_360':
-        # Resultant theta is theoretically the same, but we add 
-        # 'Epistemic Noise' to represent odometry drift
-        theta += np.random.normal(0, 0.05) 
-        
-    # 4. CRITICAL: Angle Normalization
-    # This keeps theta between -pi and pi. 
-    # Logic: tan(theta) is the same, then atan2 finds the 'clean' version.
-    theta = np.arctan2(np.sin(theta), np.cos(theta))
+    # 3. Standard Unicycle Kinematics (Euler Integration)
+    # We update orientation first, then position (Mid-point approximation)
+    new_theta = theta + w
     
-    # Return as a simple numpy array for the Raycaster
-    return np.array([x, y, theta])
+    # We use the average heading for the translation to be more accurate
+    move_angle = theta + (w / 2.0)
+    
+    new_x = x + v * np.cos(move_angle)
+    new_y = y + v * np.sin(move_angle)
+    
+    # 4. Return as 4D [x, y, cos, sin]
+    return np.array([new_x, new_y, np.cos(new_theta), np.sin(new_theta)])
 
 # --- 2. Simplified Raycaster (Needs the map!) ---
 # You'll need the map as a numpy array and its metadata (resolution, origin)
-def raycast_scan(particles, map_msg):
+def raycast_scan(poses_4d, map_msg):
     """
     Input: 
-      - particles: Nx3 numpy array [[x, y, theta], ...]
+      - particles: gets 4D numpy array of shape (N, 4) [x, y, cos(theta), sin(theta)]
       - map_msg: The full ROS OccupancyGrid message
     
     Output:
@@ -77,7 +57,7 @@ def raycast_scan(particles, map_msg):
 
     # 2. Define Laser Angles (e.g., 16 beams: for 180 degree every 10-15 degree)
     # maybe reduce to 8 beams since is a good balance between speed and accuracy for active inference
-    angles = np.linspace(0, 2*np.pi, 16, endpoint=False)
+    angles = np.linspace(0, 2*np.pi, 8, endpoint=False)
     
     # max range of lidar in meters (don't search forever)
     max_range = 10.0 
@@ -85,20 +65,21 @@ def raycast_scan(particles, map_msg):
     all_scans = []
 
     # 3. Loop through every particle (Hypothesis)
-    for p in particles:
-        px, py, p_theta = p
+    for p in poses_4d:
+        x, y, ctheta, stheta = p
+        theta = np.arctan2(stheta, ctheta)
         particle_ranges = []
         
         # 4. Loop through every beam for this particle
         for angle in angles:
-            global_angle = p_theta + angle
+            global_angle = theta + angle
             
             # Unit vector for the ray
             dx = np.cos(global_angle) * resolution 
             dy = np.sin(global_angle) * resolution 
             
             # Start position (in World Coords)
-            curr_x, curr_y = px, py
+            curr_x, curr_y = x, y
             dist_accumulated = 0.0
             found_wall = False
             

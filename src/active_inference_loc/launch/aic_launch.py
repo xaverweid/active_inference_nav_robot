@@ -13,7 +13,6 @@ def generate_launch_description():
     
     This launch file is the Brain of the AI node.
     """
-    
     pkg_dir = get_package_share_directory('active_inference_loc') 
         
     # Launch arguments
@@ -27,6 +26,11 @@ def generate_launch_description():
         'enable_aic',
         default_value='false',
         description='Enable active_inference_control node'
+    )
+
+    enable_viz_arg = DeclareLaunchArgument(
+        'enable_viz', default_value='true',
+        description='Show the Matplotlib Belief Monitor'
     )
     
     # Active Inference Control node 
@@ -57,11 +61,20 @@ def generate_launch_description():
             output='screen'
         )
     ]
-)
+    )
+
+    viz_node = Node(
+        package='active_inference_loc',
+        executable='belief_monitor',
+        name='belief_monitor',
+        condition=IfCondition(LaunchConfiguration('enable_viz'))
+    )
     
     return LaunchDescription([
         use_sim_time_arg,
         enable_aic_arg,
+        enable_viz_arg,
         aic_control_node,
         init_global_localization,
+        viz_node
     ])

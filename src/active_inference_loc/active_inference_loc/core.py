@@ -1,7 +1,9 @@
 import numpy as np
+from pyparsing import Each
 from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, is_pose_in_collision
 from .models import predict_motion, raycast_scan
 import transformations as tf_transformations
+from std_msgs.msg import Float32MultiArray
 
 
 class ActiveInferenceController:
@@ -13,87 +15,144 @@ class ActiveInferenceController:
         self.map_data = None
         self.map_metadata = None
         self.current_particles = None
-        self.actions = list(ACTION_EFFECTS.keys())
+        self.current_weights = None
+        self.actions_dict = ACTION_EFFECTS
 
     def set_map(self, map_msg):
         """Stores the map and extracts metadata for collision checking."""
         self.map_data = map_msg
         self.map_metadata = get_map_metadata(map_msg)
 
-    def update_belief(self, pose_array_msg):
-        """Updates the internal belief (particles) from AMCL."""
-        # Convert ROS message to numpy using your existing utility
-        self.current_particles = np.array([
-            [p.position.x, p.position.y, self._get_yaw(p.orientation)] 
-            for p in pose_array_msg.poses
-        ])        
+    def update_belief(self, points, weights):
+        """Updates the internal belief (particles) from AMCL.
+
+        points: (N, 4) [x, y, cos(yaw), sin(yaw)]
+        """
+        # 1. Normalize weights
+        weight_sum = np.sum(weights)
+        if weight_sum > 1e-9:
+            normalized_weights = weights / weight_sum
+        else:
+            self.get_logger().warn("Particle weights collapsed to zero! Re-initializing.")
+            return
+
+        # 2. Store for decide_action
+        self.current_particles = points
+        self.current_weights = normalized_weights
 
     def is_ready(self):
         """Checks if the controller has enough data to make a decision."""
         return self.map_data is not None and self.current_particles is not None
 
     def decide_action(self):
-        """The main AIF loop: Evaluate G (EFE) for all actions."""
+        """The main AIF loop: Evaluate G (EFE) for all actions.
+
+        representative_poses: (K, D) numpy array of cluster centers. D=4 for [x, y, cos(yaw), sin(yaw)]
+        weights: (K,) numpy array of cluster weights.
+
+        Returns the best action as a string.
+        """
+
+        #uses 4D ONLY
+
         if not self.is_ready():
             return None
 
         # 1. CONDENSE BELIEF: Cluster particles to make raycasting fast (Strategy A)
         # Instead of 2000 particles, we raycast from 5 representative hypotheses
-        representative_poses, weights = self.clusturer.get_representative_clusters_from_np(self.current_particles)
+        representative_poses, rep_weights = \
+            self.clusturer.get_representative_clusters_from_np(
+                self.current_particles, 
+                self.current_weights
+                )
+
+        # Use only 4D poses here
+        # change this here, coming from 4D
 
         efe_scores = {}
+        details = {} # For visualization/debugging
 
-        for action in self.actions:
+        for action in list(self.actions_dict.keys()):
             # 2. EVALUATE EFE (G)
-            epistemic = self.calculate_efe_epistemic(representative_poses, action)
-            pragmatic = self.calculate_efe_pragmatic(representative_poses, action)
-            
+            # calculates here the predicted poses which then can be directly used for calculate efe functions
+
+            pred_poses = np.array([
+                predict_motion(p, action, self.actions_dict) for p in representative_poses
+            ])
+
+            epistemic = self.calculate_efe_epistemic(pred_poses, rep_weights, action)
+            pragmatic = self.calculate_efe_pragmatic(pred_poses, rep_weights, action)
+
             # Total G = Risk + Ambiguity
             efe_scores[action] = epistemic + pragmatic
+            details[action] = {'epistemic': epistemic, 'pragmatic': pragmatic}
             
         # 3. SELECT ACTION: Find the one that minimizes EFE
         best_action = min(efe_scores, key=efe_scores.get)
+
+        # Publish the metrics of the SELECTED action ---
+        best_detail = details[best_action]
+        
+        metrics_msg = Float32MultiArray()
+        metrics_msg.data = [
+            float(best_detail['epistemic']), 
+            float(best_detail['pragmatic']), 
+            float(efe_scores[best_action])
+        ]
+        self.metrics_pub.publish(metrics_msg)
+
         self.logger.info(f"EFE Scores: {efe_scores}")
+        
         return best_action
 
-    def calculate_efe_epistemic(self, clusters, action):
+    def calculate_efe_epistemic(self, predicted_poses: np.ndarray,  rep_weights: np.ndarray):
         """
-        Information Gain (Ambiguity Reduction).
-        We want to find actions that result in ESS/Number of effective Particles
-        because that means the sensor data will be most informative.
-        """
-        # Predict future pose for each cluster center
-        pred_poses = np.array([predict_motion(p, action) for p in clusters])
+        Input: predicted poses (K, 4) and (K,) numpy arrays
+        Expected Information Gain (Ambiguity Reduction).
         
-        # Simulate raycasts from those 5 predicted positions
+        """
+        
+        # 1. Simulate raycasts for each predicted pose
         # This is where your robot 'imagines' what it will see
-        pred_scans = np.array([raycast_scan(p, self.map_data) for p in pred_poses])
-        
-        # Variance across the different cluster predictions
+        # pred_scans is Nx8 numpy array (N particles, 8 beams per particle)
+        # Each beam gives the distance to the nearest obstacle in that direction.
+        # raycast_scan receives 4D poses
+        pred_scans = raycast_scan(
+            poses_4d=predicted_poses,
+            map_msg=self.map_data
+        )             
+
+        # 2. Weighted Variance across the different hypotheses
         # High Variance = High Ambiguity = High potential for Information Gain
-        variance_per_beam = np.var(pred_scans, axis=0)
-        total_information_gain = np.sum(variance_per_beam)
 
-        # We negate it because the controller seeks to MINIMIZE efe_scores
-        return -total_information_gain
+        mean_scan = np.average(pred_scans, axis=0, weights=rep_weights)
+        variance = np.average(
+            (pred_scans - mean_scan) ** 2,
+            axis=0,
+            weights=rep_weights
+        )
 
-    def calculate_efe_pragmatic(self, clusters, action):
+        # 4. Sum over beams
+        information_gain = np.sum(variance)
+
+        # MINIMIZE EFE ⇒ negate epistemic value
+        return -information_gain
+
+    def calculate_efe_pragmatic(self, predicted_poses: np.ndarray,  rep_weights: np.ndarray):
         """
         Pragmatic Value (Risk/Safety).
         Penalizes actions that lead into walls.
+        Input: predicted poses (K, 4) and (K,) numpy arrays
         """
-        pred_poses = np.array([predict_motion(p, action) for p in clusters])
-        
-        collision_count = 0
-        for pose in pred_poses:
+        expected_risk = 0.0
+
+        for pose, w in zip(predicted_poses, rep_weights):
             if is_pose_in_collision(pose, self.map_metadata):
-                collision_count += 1
+                expected_risk += w
         
-        # If any major hypothesis leads to a crash, apply a massive penalty
-        if collision_count > 0:
-            return 1000.0 * collision_count
-            
-        return 0.0
+        risk_penalty_factor = 500.0
+
+        return expected_risk * risk_penalty_factor
 
     def _get_yaw(self, q):
         """Helper to get yaw from quaternion."""
