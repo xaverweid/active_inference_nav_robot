@@ -14,3 +14,8 @@ The active inference launch file (aic_launch.py) can be used after the diff_driv
 
 System: ROS2 Jazzy, Gazebo Harmonic
 
+## Known Issues / Bugs
+
+- When launching the robot_launch.py file, the system sometimes cannot find the models (diff_drive_robot/models). 
+    Likely happens due to 
+

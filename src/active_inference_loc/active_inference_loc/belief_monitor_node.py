@@ -1,14 +1,13 @@
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
 from nav_msgs.msg import OccupancyGrid
-from geometry_msgs.msg import PoseArray
 from std_msgs.msg import Float32MultiArray
+from nav2_msgs.msg import ParticleCloud
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import numpy as np
 from sklearn.cluster import KMeans
-from nav2_msgs.msg import ParticleCloud
 import threading
 
 # Importing your existing utilities
@@ -18,135 +17,113 @@ class BeliefMonitorNode(Node):
     def __init__(self):
         super().__init__('belief_monitor_node')
 
-        # 1. Initialize Logic
+        # 1. State Variables (Used to pass data from ROS thread to Main Thread)
         self.clusturer = ParticleClusturer(n_clusters=5)
-        self.map_data = None
-        self.current_metrics = [0.0, 0.0, 0.0] # [Epistemic, Pragmatic, Total G]
+        self.map_metadata = None
+        self.current_metrics = [0.0, 0.0, 0.0]
+        self.latest_cloud_data = None  # Storage for unprocessed particle data
+        self.lock = threading.Lock()   # Thread safety
 
-        # 2. QoS for Map (static, transient_local)
+        # 2. QoS Setup
         map_qos = QoSProfile(durability=DurabilityPolicy.TRANSIENT_LOCAL, depth=1)
-
-        # 3. QoS for ParticleCloud (AMCL publishes with BEST_EFFORT, so we must subscribe with it too)
         particle_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
-            depth=10
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1
         )
 
-        # 4. Subscriptions
+        # 3. Subscriptions
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, map_qos)
         self.cloud_sub = self.create_subscription(ParticleCloud, '/particle_cloud', self.cloud_callback, particle_qos)
         self.metrics_sub = self.create_subscription(Float32MultiArray, '/aic_metrics', self.metrics_callback, 10)
 
-        # 4. Matplotlib Setup
+        # 4. Matplotlib Setup (Main Thread owns this)
         plt.ion()
         self.fig, self.ax = plt.subplots(figsize=(10, 8))
-        self.fig.canvas.manager.set_window_title('Active Inference Belief & Performance Monitor')
+        self.fig.canvas.manager.set_window_title('AIC Belief & Performance Monitor')
         
-        # Dashboard Text Box (Upper Left)
         self.dashboard = self.ax.text(0.02, 0.98, 'Waiting for data...', transform=self.ax.transAxes, 
                                       verticalalignment='top', family='monospace', fontsize=9,
                                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray'))
-
-        plt.show()
         
-        self.get_logger().info("Belief Monitor Node with AIC Dashboard Started.")
+        self.get_logger().info("Belief Monitor Node Started. Logic on Main Thread.")
 
     def metrics_callback(self, msg):
-        """ Receives [Epistemic, Pragmatic, Total_G] from the aic_node. """
-        if len(msg.data) >= 3:
-            self.current_metrics = msg.data
+        with self.lock:
+            if len(msg.data) >= 3:
+                self.current_metrics = msg.data
 
     def map_callback(self, msg):
-        if self.map_data is None:
-            self.map_data = get_map_metadata(msg)
-            self.ax.imshow(self.map_data['data'], cmap='gray', origin='lower',
-                           extent=[self.map_data['origin_x'], 
-                                   self.map_data['origin_x'] + self.map_data['width'] * self.map_data['resolution'],
-                                   self.map_data['origin_y'], 
-                                   self.map_data['origin_y'] + self.map_data['height'] * self.map_data['resolution']],
+        if self.map_metadata is None:
+            self.map_metadata = get_map_metadata(msg)
+            # Initial Map Render
+            self.ax.imshow(self.map_metadata['data'], cmap='gray', origin='lower',
+                           extent=[self.map_metadata['origin_x'], 
+                                   self.map_metadata['origin_x'] + self.map_metadata['width'] * self.map_metadata['resolution'],
+                                   self.map_metadata['origin_y'], 
+                                   self.map_metadata['origin_y'] + self.map_metadata['height'] * self.map_metadata['resolution']],
                            alpha=0.6)
             self.ax.set_title("Robot Posterior Belief & AIC Metrics")
 
     def cloud_callback(self, msg):
-        if self.map_data is None: 
-            self.get_logger().warning("Map data not yet received; cannot plot particles.")
+        # Only save the message. Processing and Plotting moved to main loop.
+        with self.lock:
+            self.latest_cloud_data = msg
+
+    def update_plot(self):
+        """ This function runs on the MAIN THREAD to do the heavy lifting. """
+        cloud_msg = None
+        with self.lock:
+            cloud_msg = self.latest_cloud_data
+            self.latest_cloud_data = None # Clear after taking to avoid redundant work
+            metrics = self.current_metrics
+
+        if cloud_msg is None or self.map_metadata is None:
             return
 
-        
         try:
-            # --- A. DATA PROCESSING ---
-            # Use the 4D converter
-            # raw points needs to be 4D for clustering
-            raw_points, raw_weights = self.clusturer.cloud_to_numpy(msg)
+            # --- 1. DATA PROCESSING ---
+            raw_points, raw_weights = self.clusturer.cloud_to_numpy(cloud_msg)
             n_particles = len(raw_points)
-            
-            if n_particles == 0:
-                self.get_logger().warning("Received empty particle cloud.")
-                return
-            # 1. Clustering for Brain & Metrics (using 4D)
-            # representative_poses: List of (x, y, cos(theta), sin(theta))
-            representative_poses, cluster_weights = self.clusturer.get_representative_clusters_from_np(raw_points, raw_weights)
+            if n_particles == 0: return
 
-            # 2. Uncertainty Calculations
+            representative_poses, cluster_weights = self.clusturer.get_representative_clusters_from_np(raw_points, raw_weights)
+            
+            # Entropy/Diversity Logic
             shannon_h = -np.sum([w * np.log(w + 1e-9) for w in cluster_weights])
-            sum_sq_w = np.sum(raw_weights**2)
-            ess_val = 1.0 / (sum_sq_w + 1e-9)
+            ess_val = 1.0 / (np.sum(raw_weights**2) + 1e-9)
             diversity_ratio = (ess_val / n_particles) * 100
 
-            # --- B. VISUALIZATION ---
+            # --- 2. CLEAR PREVIOUS FRAME ---
             for artist in list(self.ax.collections) + list(self.ax.patches):
                 artist.remove()
-            
-            # Also clear previous text annotations (except dashboard)
             for txt in list(self.ax.texts):
-                if txt != self.dashboard:
-                    txt.remove()
+                if txt != self.dashboard: txt.remove()
 
-            # Plot Raw Particles (X and Y only)
-            self.ax.scatter(raw_points[:, 0], raw_points[:, 1], s=1, c='blue', alpha=0.1, label='Particles')
+            # --- 3. DRAW NEW FRAME ---
+            # Raw Particles
+            self.ax.scatter(raw_points[:, 0], raw_points[:, 1], s=1, c='blue', alpha=0.1)
 
-            # Re-run K-means just for the labels to draw ellipses correctly
-            # Note: We use raw_points[:, :2] if you want spatial ellipses only,
-            # or raw_points if you want orientation to influence cluster shapes.
-            kmeans_viz = KMeans(n_clusters=len(representative_poses), n_init=10)
+            # Re-run KMeans for visualization labels
+            kmeans_viz = KMeans(n_clusters=len(representative_poses), n_init=5)
             labels = kmeans_viz.fit_predict(raw_points) 
 
-            # Unpacking 4D into 3D for visualization
             for i, (mx, my, ctheta, stheta) in enumerate(representative_poses):
-                mtheta = np.arctan2(stheta, ctheta)
                 cluster_mask = (labels == i)
-                if np.sum(cluster_mask) < 3: 
-                    continue
+                if np.sum(cluster_mask) < 3: continue
                 
-                # Pass only X and Y to the ellipse function
                 res = get_covariance_ellipse(raw_points[cluster_mask, :2])
                 if res:
-                    width, height, angle = res
+                    w, h, ang = res
                     color = plt.cm.plasma(i / self.clusturer.n_clusters)
-                    
-                    ell = Ellipse(
-                        xy=(mx, my), 
-                        width=width, 
-                        height=height, 
-                        angle=angle, 
-                        edgecolor=color, 
-                        fc=color, 
-                        lw=2, 
-                        alpha=0.3
-                    )
+                    ell = Ellipse(xy=(mx, my), width=w, height=h, angle=ang, 
+                                  edgecolor=color, fc=color, lw=2, alpha=0.3)
                     self.ax.add_patch(ell)
-                    
-                    # Draw a small "heading" line to show the cluster's yaw
-                    # Use ctheta and stheta for direction
-                    dx = 0.2 * ctheta
-                    dy = 0.2 * stheta           
-                    self.ax.arrow(mx, my, dx, dy, color='red', head_width=0.05, head_length=0.05)
+                    self.ax.arrow(mx, my, 0.2*ctheta, 0.2*stheta, color='red', head_width=0.05)
 
-            # --- C. DASHBOARD UPDATE ---
-            # (Surprise logic remains same)
+            # Dashboard
             current_surprise = -np.log(np.max(cluster_weights) + 1e-9) 
-            
             table_text = (
                 f"▼ BELIEF METRICS\n"
                 f"Shannon Entropy (H):  {shannon_h:.3f} nats\n"
@@ -154,33 +131,35 @@ class BeliefMonitorNode(Node):
                 f"Variational F:        {current_surprise:.2f}\n"
                 f"-------------------------------\n"
                 f"▼ AIC POLICY (G)\n"
-                f"Expected Epistemic:   {self.current_metrics[0]:.2f}\n"
-                f"Expected Pragmatic:   {self.current_metrics[1]:.2f}\n"
-                f"Total Expected G:     {self.current_metrics[2]:.2f}"
+                f"Expected Epistemic:   {metrics[0]:.2f}\n"
+                f"Expected Pragmatic:   {metrics[1]:.2f}\n"
+                f"Total Expected G:     {metrics[2]:.2f}"
             )
             self.dashboard.set_text(table_text)
 
-            #Redraw the canvas
+            # Redraw
             self.fig.canvas.draw()
             self.fig.canvas.flush_events()
 
         except Exception as e:
-            self.get_logger().error(f"Error in cloud_callback: {e}", exc_info=True)
+            self.get_logger().error(f"Visualization Error: {e}")
 
 def main(args=None):
     rclpy.init(args=args)
     node = BeliefMonitorNode()
-    
-    # Spin in a separate thread so matplotlib event loop can run
-    executor_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
-    executor_thread.start()
-    
+
+    # ROS Thread
+    spin_thread = threading.Thread(target=lambda: rclpy.spin(node), daemon=True)
+    spin_thread.start()
+
     try:
-        # Keep main thread alive for matplotlib
+        # Main Thread Loop: Exclusively for Matplotlib
         while rclpy.ok():
-            plt.pause(0.1)
+            node.update_plot()
+            plt.pause(0.1) # 10Hz update is enough for visualization
     except KeyboardInterrupt:
         pass
     finally:
+        plt.close('all')
         node.destroy_node()
         rclpy.shutdown()

@@ -2,7 +2,6 @@ import numpy as np
 from geometry_msgs.msg import Pose
 from sklearn.cluster import KMeans
 from matplotlib.patches import Ellipse
-import tf_transformations # Often used in ROS 2 for orientation
 from nav2_msgs.msg import ParticleCloud
 
 #This file is for specialized tools that don't make decisions but perform heavy lifting or data transformation.
@@ -20,7 +19,9 @@ ACTION_EFFECTS = {
     'ROTATE_LEFT':   {'linear': 0.0,  'angular': 0.4},
     'ROTATE_RIGHT':  {'linear': 0.0,  'angular': -0.4},
     'TURN_LEFT':     {'linear': 0.15, 'angular': 0.3},
-    'TURN_RIGHT':    {'linear': 0.15, 'angular': -0.3}
+    'TURN_RIGHT':    {'linear': 0.15, 'angular': -0.3},
+    'BACKWARD_SMALL':{'linear': -0.15,'angular': 0.0},
+    'BACKWARD_LARGE':{'linear': -0.30,'angular': 0.0},
 }
 
 # Particle Clustering Utility

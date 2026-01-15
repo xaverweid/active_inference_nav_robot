@@ -14,7 +14,6 @@ def predict_motion(pose_4d, action_type, action_dict, dt: float = 1.0):
     theta = np.arctan2(stheta, ctheta) 
 
     # 2. Get effects directly from your ACTION_EFFECTS dictionary
-    # These could also be pulled directly from ACTION_EFFECTS if you import it
     effect = action_dict.get(action_type, {'linear': 0.0, 'angular': 0.0})
     v = effect['linear']
     w = effect['angular']
@@ -37,72 +36,63 @@ def predict_motion(pose_4d, action_type, action_dict, dt: float = 1.0):
 
 # --- 2. Simplified Raycaster (Needs the map!) ---
 # You'll need the map as a 2D numpy array and its metadata (resolution, origin)
-def raycast_scan(poses_4d, map_2d, map_metadata):
+def raycast_scan(poses_4d, map_2d, map_metadata, fov_deg=180, num_beams=8):
     """
-    Input: 
-      - poses4d: gets 4D numpy array of shape (N, 4) [x, y, cos(theta), sin(theta)]
-      - map_2d: The full ROS OccupancyGrid message as a numpy array
-      - map_metadata: The metadata of the map (resolution, origin)
-    Output:
-      - scans: Nx8 numpy array (N particles, 8 beams per particle)
-    Each beam gives the distance to the nearest obstacle in that direction.
-    Might be increased to 16 beams for more accuracy but slower computation.
+    fov_deg: Set this to match your real LiDAR (e.g., 180 or 360)
+    num_beams: Number of rays to simulate per particle, can be 8 or 16 preferably
     """
-    
-    # 1. Unpack Map Data (Do this once outside loop if possible for speed)
-    resolution = map_metadata['resolution']
-    origin_x = map_metadata['origin_x']
-    origin_y = map_metadata['origin_y']
-    height, width = map_2d.shape
+    res = map_metadata['resolution']
+    ox = map_metadata['origin_x']
+    oy = map_metadata['origin_y']
+    h, w = map_2d.shape
 
-    # 2. Define Laser Angles (e.g., 16 beams: for 180 degree every 10-15 degree)
-    # maybe reduce to 8 beams since is a good balance between speed and accuracy for active inference
-    angles = np.linspace(0, 2*np.pi, 8, endpoint=False)
+    # Adjust angles based on FOV (centered at 0)
+    fov_rad = np.radians(fov_deg)
+    angles = np.linspace(-fov_rad/2, fov_rad/2, num_beams, endpoint=False)
     
-    # max range of lidar in meters (don't search forever)
     max_range = 10.0 
+    # Start ray 2 pixels away to avoid self-collision with the current cell
+    start_offset = res * 2.0 
     
     all_scans = []
 
-    # 3. Loop through every particle (Hypothesis)
     for p in poses_4d:
-        x, y, ctheta, stheta = p
-        theta = np.arctan2(stheta, ctheta)
+        x, y, cth, sth = p
+        theta = np.arctan2(sth, cth)
         particle_ranges = []
         
-        # 4. Loop through every beam for this particle
         for angle in angles:
             global_angle = theta + angle
+            dx_unit = np.cos(global_angle)
+            dy_unit = np.sin(global_angle)
             
-            # Unit vector for the ray
-            dx = np.cos(global_angle) * resolution 
-            dy = np.sin(global_angle) * resolution 
+            # Start slightly ahead of the center
+            curr_x = x + dx_unit * start_offset
+            curr_y = y + dy_unit * start_offset
             
-            # Start position (in World Coords)
-            curr_x, curr_y = x, y
-            dist = 0.0
+            dist = start_offset
             hit = False
             
-            # 5. WALK THE RAY (The "Traversal")
             while dist < max_range:
-                # Convert World (meters) -> Grid (indices)
-                gx = int((curr_x - origin_x) / resolution)
-                gy = int((curr_y - origin_y) / resolution)
+                gx = int((curr_x - ox) / res)
+                gy = int((curr_y - oy) / res)
                 
-                # Faster bounds and collision check using 2D array
-                if 0 <= gx < width and 0 <= gy < height:
-                    if map_2d[gy, gx] > 50 or map_2d[gy, gx] == -1: # [row, col] is [y, x], -1 means unknown
+                if 0 <= gx < w and 0 <= gy < h:
+                    val = map_2d[gy, gx]
+                    if val > 50 or val == -1:
                         particle_ranges.append(dist)
                         hit = True
                         break
                 else:
-                    particle_ranges.append(max_range)
+                    # Off map
+                    particle_ranges.append(dist)
                     hit = True
                     break
                 
-                curr_x += dx
-                curr_y += dy
-                dist += resolution
+                # Step by resolution
+                curr_x += dx_unit * res
+                curr_y += dy_unit * res
+                dist += res
             
             if not hit:
                 particle_ranges.append(max_range)

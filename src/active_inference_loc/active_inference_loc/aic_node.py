@@ -1,4 +1,5 @@
-from rclpy.qos import qos_profile_default
+import rclpy
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseArray, Twist
 from nav_msgs.msg import OccupancyGrid
@@ -16,77 +17,110 @@ class AICNode(Node):
         
         # 1. Initialize the "Brain"
         # We pass the logger so the core can log without being a Node
+        # 1. State Tracking
+        self.map_ready = False
+        self.particles_received = False
+        self.system_active = False
+        self.latest_particles = None
+        self.latest_weights = None
+        self._stop_timer = None
+
+        # 2. Initialize Brain & Tools
         self.controller = ActiveInferenceController(logger=self.get_logger())
         self.metrics_pub = self.create_publisher(Float32MultiArray, '/aic_metrics', 10)
         self.controller.set_metrics_publisher(self.metrics_pub)
-
         self.clusturer = ParticleClusturer(n_clusters=5)
 
-        self.time_delta = 1.0  # Time step for discrete actions (seconds), adjust as needed
+        self.time_delta = 1.0  # seconds
 
-        # latest particle data
-        self.latest_particles = None
-        self.latest_weights = None
-        self.particles_received = False
 
-        self._stop_timer = None
         
-        # 2. ROS Infrastructure
+        # 3. ROS Infrastructure
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         
-        self.map_sub = self.create_subscription(
-            OccupancyGrid, '/map', self.map_callback, 10
+        # Map: Use Transient Local if map server is already running
+       # Define a QoS that matches the Map Server (Transient Local is key here)
+        map_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            depth=1
         )
+
+        self.map_sub = self.create_subscription(
+            OccupancyGrid, 
+            '/map', 
+            self.map_callback, 
+            map_qos  # Use the custom QoS here!
+        )
+                
+        # Particles: AMCL uses Best Effort
         self.particle_sub = self.create_subscription(
-            ParticleCloud, '/particle_cloud', self.particle_callback, qos_profile_default
+            ParticleCloud, '/particle_cloud', self.particle_callback,
+            QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.BEST_EFFORT,
+                durability=DurabilityPolicy.VOLATILE,
+            )
         )
         # Note: AMCL publishes /particle_cloud with BEST_EFFORT QoS,
         # so subscribers must also use best_effort to receive messages.
         # qos_profile_sensor_data provides this (best_effort/volatile).
                 
-        # 3. Control Loop (1Hz is good for discrete Active Inference)
+        # 4. Control Loop (Only starts logic when ready)
         self.timer = self.create_timer(self.time_delta, self.control_loop)
-        self.get_logger().info(f"AIC Node Skin initialized with time_delta={self.time_delta}s.")
+        self.get_logger().info("AIC Node initialized. Waiting for Map and Particles...")
 
     def map_callback(self, msg):
-        # Pass the map directly to the controller's generative model
-        self.controller.set_map(msg)
-        self.get_logger().info("Map registered in Controller.")
-        # Only need the map once for static environments
-        self.destroy_subscription(self.map_sub)
+        self.get_logger().info("Received Map. Processing...")
+        try:
+            self.controller.set_map(msg)
+            self.map_ready = True
+            self.get_logger().info("Map registered successfully.")
+            # We keep the subscription alive for a moment to ensure stability, 
+            # or destroy it if you are sure the map won't change.
+            self.destroy_subscription(self.map_sub)
+        except Exception as e:
+            self.get_logger().error(f"Failed to set map: {e}")
 
     def particle_callback(self, msg: ParticleCloud):
-        # Pass the ROS message to the controller
-        # always triggers whenever AMCL talks
-        # The controller will use the ParticleClusturer (in utils) internally
         points, weights = self.clusturer.cloud_to_numpy(msg)
 
         if len(points) == 0:
-            self.get_logger().warn("Received empty particle cloud!")
             return
         
         self.latest_particles = points
         self.latest_weights = weights
-
-        if not self.particles_received:
-            self.get_logger().info(
-                f"Received particle cloud with {len(msg.poses)} particles"
-            )
-            self.particles_received = True
+        
+        # Update the controller's internal belief
         self.controller.update_belief(points, weights)
+        
+        if not self.particles_received:
+            self.get_logger().info(f"Particles initialized ({len(points)} particles).")
+            self.particles_received = True
         
     def control_loop(self):
         # The Node only asks the controller for a decision
-        if self.latest_particles is None:
-            self.get_logger().debug("Waiting for particle cloud...")
+        if not self.map_ready:
+            self.get_logger().warn("Control loop: Waiting for map...", throttle_duration_sec=5.0)
             return
 
-        # Belief exists. Ask the controller to decide the best action.
-        best_action_name = self.controller.decide_action()
+        if not self.particles_received:
+            self.get_logger().warn("Control loop: Waiting for particle cloud...", throttle_duration_sec=5.0)
+            return
         
-        if best_action_name:
-            # apply action for exactly self.time_delta seconds
-            self.apply_action(best_action_name)
+        if not self.system_active:
+            self.get_logger().info("🚀 ALL SYSTEMS READY. Starting Active Inference Loop.")
+            self.system_active = True
+
+        # Everything is ready. Ask the controller to decide the best action.
+        try:
+            best_action_name = self.controller.decide_action()
+        
+            if best_action_name:
+                self.get_logger().info(f"Selected Action: {best_action_name}")
+                self.apply_action(best_action_name)
+        except Exception as e:
+            self.get_logger().error(f"Error in Active Inference Node control loop: {e}")
 
     def apply_action(self, action_name):
         twist_msg = self.translate_action_to_twist(action_name)
@@ -96,20 +130,33 @@ class AICNode(Node):
         if self._stop_timer is not None:
             self._stop_timer.cancel()
 
-        # schedule a stop after time_delta
-        self._stop_timer = Timer(self.time_delta, self.stop_motion)
-        self._stop_timer.daemon = True
+        # Stop the robot exactly before the next "thought" cycle
+        # Subtract 0.1s to allow the robot to fully stop before the next scan is taken
+        stop_time = max(0.1, self.time_delta - 0.1)
+        self._stop_timer = Timer(stop_time, self.stop_motion)
         self._stop_timer.start()
 
     def stop_motion(self):
-        stop_msg = Twist()
-        self.cmd_vel_pub.publish(stop_msg)
+        self.cmd_vel_pub.publish(Twist())
 
     def translate_action_to_twist(self, action_name):
         """Returns a Twist corresponding to applying the discrete action for TIME_DELTA as velocities."""
         t = Twist()
         vals = ACTION_EFFECTS.get(action_name, {'linear': 0.0, 'angular': 0.0})
-        # ACTION_EFFECTS should contain velocities (m/s, rad/s)
         t.linear.x = vals['linear']
         t.angular.z = vals['angular']
         return t
+    
+def main(args=None):
+    rclpy.init(args=args)
+    aic_node = AICNode()
+    try:
+        rclpy.spin(aic_node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        aic_node.destroy_node()
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass
