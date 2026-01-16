@@ -14,7 +14,17 @@ from .utils import ACTION_EFFECTS, ParticleClusturer  # Move your twist values h
 class AICNode(Node):
     def __init__(self):
         super().__init__('aic_node')
-        
+                
+        self.time_delta = 1.0  # seconds
+
+      # --- Replace the init_time lines with this ---
+        self.recording_delay = 80.0  # Seconds to wait
+        self.ticks_to_wait = int(self.recording_delay / self.time_delta)
+        self.ticks_passed = 0
+
+        # Also, send a "Stop" command immediately to ensure 
+        # the robot isn't moving from a previous crash/run
+
         # 1. Initialize the "Brain"
         # We pass the logger so the core can log without being a Node
         # 1. State Tracking
@@ -24,15 +34,12 @@ class AICNode(Node):
         self.latest_particles = None
         self.latest_weights = None
         self._stop_timer = None
-
+       
         # 2. Initialize Brain & Tools
         self.controller = ActiveInferenceController(logger=self.get_logger())
         self.metrics_pub = self.create_publisher(Float32MultiArray, '/aic_metrics', 10)
         self.controller.set_metrics_publisher(self.metrics_pub)
         self.clusturer = ParticleClusturer(n_clusters=5)
-
-        self.time_delta = 1.0  # seconds
-
 
         
         # 3. ROS Infrastructure
@@ -99,7 +106,15 @@ class AICNode(Node):
             self.particles_received = True
         
     def control_loop(self):
-        # The Node only asks the controller for a decision
+        # 1. Wait for the specified number of ticks
+        if self.ticks_passed < self.ticks_to_wait:
+            self.ticks_passed += 1
+            self.get_logger().info(
+                f"Recording Standby: Starting in {self.ticks_to_wait - self.ticks_passed}s...", 
+                throttle_duration_sec=1.0
+            )
+            return
+        
         if not self.map_ready:
             self.get_logger().warn("Control loop: Waiting for map...", throttle_duration_sec=5.0)
             return
@@ -112,7 +127,7 @@ class AICNode(Node):
             self.get_logger().info("🚀 ALL SYSTEMS READY. Starting Active Inference Loop.")
             self.system_active = True
 
-        # Everything is ready. Ask the controller to decide the best action.
+        
         try:
             best_action_name = self.controller.decide_action()
         

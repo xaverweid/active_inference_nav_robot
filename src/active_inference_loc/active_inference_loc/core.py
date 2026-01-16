@@ -27,7 +27,7 @@ class ActiveInferenceController:
 
         # 3. Risk Penalty: The "cost" of a single collision.
         # This scales the pragmatic value before it is weighted by beta.
-        self.risk_penalty_factor = 100.0
+        self.risk_penalty_factor = 300.0
 
 
     def set_metrics_publisher(self, pub):
@@ -91,10 +91,15 @@ class ActiveInferenceController:
 
             # Calculate components
             raw_epistemic = self.calculate_efe_epistemic(pred_poses, rep_weights)
+            # Add a tiny penalty for staying still to encourage movement
+            if action == 'WAIT':
+                raw_epistemic += 5.0
+
             raw_pragmatic = self.calculate_efe_pragmatic(pred_poses, rep_weights)
 
             # WEIGHTED EFE: G = (Gamma * Ambiguity) + (Beta * Risk)
             # We minimize G. 
+            
             total_efe = (self.alpha_epistemic * raw_epistemic) + \
                         (self.beta_pragmatic * raw_pragmatic)
             

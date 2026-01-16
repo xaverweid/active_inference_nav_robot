@@ -21,7 +21,6 @@ ACTION_EFFECTS = {
     'TURN_LEFT':     {'linear': 0.15, 'angular': 0.3},
     'TURN_RIGHT':    {'linear': 0.15, 'angular': -0.3},
     'BACKWARD_SMALL':{'linear': -0.15,'angular': 0.0},
-    'BACKWARD_LARGE':{'linear': -0.30,'angular': 0.0},
 }
 
 # Particle Clustering Utility

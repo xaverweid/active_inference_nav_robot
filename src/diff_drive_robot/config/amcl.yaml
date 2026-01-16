@@ -19,7 +19,7 @@ amcl:
     # Some versions of AMCL use this to force a rate
     save_pose_rate: 0.5
     # Increase particle count for global localization to cover the whole map
-    min_particles: 500
+    min_particles: 1000
     max_particles: 5000
     # This ensures it doesn't just stick to the initial pose if it's wrong
     always_reset_initial_pose: true
@@ -63,9 +63,9 @@ amcl:
     likelihood_max_dist: 2.0        # Max distance for likelihood field
     likelihood_max_error: 0.1       # Max error for likelihood
     
-    # Recovery (handling kidnapped robot / global localization)
-    recovery_alpha_fast: 0.1        # Fast exponential decay (0 = disabled)
-    recovery_alpha_slow: 0.01        # Slow exponential decay (0 = disabled)
+    # Recovery (handling global localization, NOT kidnapped robot)
+    recovery_alpha_fast: 0.0        # Fast exponential decay (0 = disabled)
+    recovery_alpha_slow: 0.0        # Slow exponential decay (0 = disabled)
     
     # Update configuration
     update_min_d: 0.1              # Min distance threshold for update (meters)
