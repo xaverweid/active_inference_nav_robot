@@ -18,7 +18,7 @@ class AICNode(Node):
         self.time_delta = 1.0  # seconds
 
       # --- Replace the init_time lines with this ---
-        self.recording_delay = 80.0  # Seconds to wait
+        self.recording_delay = 00.0  # Seconds to wait
         self.ticks_to_wait = int(self.recording_delay / self.time_delta)
         self.ticks_passed = 0
 
@@ -32,14 +32,13 @@ class AICNode(Node):
         self.particles_received = False
         self.system_active = False
         self.latest_particles = None
-        self.latest_weights = None
         self._stop_timer = None
        
         # 2. Initialize Brain & Tools
         self.controller = ActiveInferenceController(logger=self.get_logger())
         self.metrics_pub = self.create_publisher(Float32MultiArray, '/aic_metrics', 10)
         self.controller.set_metrics_publisher(self.metrics_pub)
-        self.clusturer = ParticleClusturer(n_clusters=5)
+        self.clusturer = ParticleClusturer()
 
         
         # 3. ROS Infrastructure
@@ -90,16 +89,15 @@ class AICNode(Node):
             self.get_logger().error(f"Failed to set map: {e}")
 
     def particle_callback(self, msg: ParticleCloud):
-        points, weights = self.clusturer.cloud_to_numpy(msg)
+        points = self.clusturer.cloud_to_numpy(msg)
 
         if len(points) == 0:
             return
         
         self.latest_particles = points
-        self.latest_weights = weights
         
         # Update the controller's internal belief
-        self.controller.update_belief(points, weights)
+        self.controller.update_belief(points)
         
         if not self.particles_received:
             self.get_logger().info(f"Particles initialized ({len(points)} particles).")

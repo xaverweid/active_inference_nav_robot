@@ -164,3 +164,4 @@ wheel==0.45.1
 xacro==2.1.1
 
 PyYAML==6.0.3
+scipy==1.11.4

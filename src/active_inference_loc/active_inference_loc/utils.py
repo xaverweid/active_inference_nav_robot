@@ -1,8 +1,8 @@
 import numpy as np
-from geometry_msgs.msg import Pose
-from sklearn.cluster import KMeans
-from matplotlib.patches import Ellipse
+from sklearn.mixture import GaussianMixture
 from nav2_msgs.msg import ParticleCloud
+import scipy.ndimage as ndi
+import matplotlib.pyplot as plt
 
 #This file is for specialized tools that don't make decisions but perform heavy lifting or data transformation.
 #Actions, refine which ones you want
@@ -35,15 +35,14 @@ class ParticleClusturer:
 
         """
         self.n_clusters = n_clusters
+        self.gmm = None  # Will hold the GaussianMixture model
 
     def cloud_to_numpy(self, msg: ParticleCloud):
         """
         Converts a nav2_msgs/ParticleCloud message to: 
         - points: (N, 4) numpy array [x, y, cos(yaw), sin(yaw)]
-        - weights: (N,) numpy array of weights
         """
         points_4d = []
-        weights = []
 
         for p in msg.particles:
             # Extract position
@@ -58,50 +57,41 @@ class ParticleClusturer:
         
             # 2. Store as 4D vector
             points_4d.append([x, y, np.cos(theta), np.sin(theta)])
-            weights.append(p.weight)
 
-            # Normalize weights in update_belief function as needed
+        return np.array(points_4d)
 
-        return np.array(points_4d), np.array(weights)
-
-    def get_representative_clusters_from_np(self, points_4d, weights):
+    def get_representative_clusters_from_gmm(self, points_4d):
         """
-        Runs K-Means clustering and returns a list of 'Representative Poses'
-        and the weight (importance) of each cluster.
-        # K-Means on [x, y, cos_theta, sin_theta] and Normalize weights.
+        Runs GMM on unweighted ROS particles
+        Input: points_4d (N, 4) -> [x, y, cos, sin]
+        Output: 
+       - cluster_poses: The center (mean) of each Gaussian
+       - cluster_weights: The 'importance' of each Gaussian (0.0 to 1.0)
         """
 
-        # K-Means on [x, y, cos_theta, sin_theta]
-        kmeans = KMeans(n_clusters=self.n_clusters, n_init=10)
-        labels = kmeans.fit_predict(points_4d)
+        # 1. Initialize GMM
+        # n_components is your self.n_clusters (e.g., 10)
+        self.gmm = GaussianMixture(
+            n_components=self.n_clusters, 
+            covariance_type='full', 
+            max_iter=100,
+            random_state=42
+        )
+
+        # 2. Fit to the points
+        # Since particles are unweighted, we don't need sample_weight
+        self.gmm.fit(points_4d)
+
+        # 3. Extract Results
+        # Means are the representative poses (Hypotheses)
+        cluster_poses = [tuple(mean) for mean in self.gmm.means_]
         
-        cluster_poses = []
-        cluster_weights = []
-        
-        for i in range(self.n_clusters):
-            # Weighted mean of particles in this cluster
-            mask = (labels == i)
-            if not np.any(mask): continue
-            
-            c_weights = weights[mask]
-            c_weights /= np.sum(c_weights) # Internal normalization
-            
-            # Calculate weighted center
-            mean_x = np.average(points_4d[mask, 0], weights=c_weights)
-            mean_y = np.average(points_4d[mask, 1], weights=c_weights)
-            
-            # Safe angle mean
-            mean_cos = np.average(points_4d[mask, 2], weights=c_weights)
-            mean_sin = np.average(points_4d[mask, 3], weights=c_weights)
-            
-            # Conversion back to 3D yaw for the robots physical is NOT done here, but in the display, robot control, etc.
-            # Return is 4D for internal consistency
-            
-            cluster_poses.append((mean_x, mean_y, mean_cos, mean_sin))
-            cluster_weights.append(np.sum(weights[mask]))
-            
+        # Weights_ are the mixing coefficients (The "Importance" of each cluster)
+        # These automatically sum to 1.0
+        cluster_weights = self.gmm.weights_.tolist()
+
         return cluster_poses, cluster_weights
-
+        
 # Utility Functions (non-class): generic ROS/map/geometry conversions
 
 def ros_pose_to_np(pose_msg):
@@ -119,41 +109,26 @@ def get_map_metadata(map_msg):
     # Use int8 to save memory; ROS values are -1, 0, or 100
     data_2d = np.array(map_msg.data, dtype=np.int8).reshape((info.height, info.width))
     
+    # Create binary obstacle map: True for obstacles
+    obstacles = (data_2d >= 50) | (data_2d == -1)
+    
+    # Compute distance transform: distance to nearest obstacle in meters
+    # Obstacles are 0 and free space is 1 for distance transform (has the map where each pixel is the distance to nearest obstacle)
+    distance_map = ndi.distance_transform_edt(~obstacles) * info.resolution
+    
+    # Checked for correctness, distance map looks good, same as data2d etc
+    
     return {
         'resolution': info.resolution,
         'origin_x':   info.origin.position.x,
         'origin_y':   info.origin.position.y,
         'width':      info.width,
         'height':     info.height,
-        'data':       data_2d
+        'data':       data_2d,
+        'distance_map': distance_map
     }
 
-def is_pose_in_collision(pose, map_metadata, threshold=50):
-    # pose 4D: [x, y, cos(theta), sin(theta)] numpy array, but we only need x,y
-    x, y = pose[0], pose[1]
-    resolution = map_metadata['resolution']
-    origin_x = map_metadata['origin_x']
-    origin_y = map_metadata['origin_y']
-    width = map_metadata['width']
-    height = map_metadata['height']
-    data = map_metadata['data']
-    
-    # Convert world coords to grid indices
-    grid_x = int((x - origin_x) / resolution)
-    grid_y = int((y - origin_y) / resolution)
-    
-    ## 3. Safety: Check Bounds first
-    if 0 <= grid_x < width and 0 <= grid_y < height:
-        cell_value = data[grid_y, grid_x]
 
-        # Check for Wall (usually 100) or Unknown (-1)
-        if cell_value >= threshold or cell_value == -1:
-            return True # Collision or Danger
-            
-        return False # Safe (Free space is 0)
-        
-    return True # Out of bounds is always a collision
-    
 def get_covariance_ellipse(cluster_points, n_std=2.0):
     """
     Returns a Matplotlib Ellipse patch representing the covariance of a cluster.
@@ -174,3 +149,90 @@ def get_covariance_ellipse(cluster_points, n_std=2.0):
     width, height = 2 * n_std * np.sqrt(vals)
     
     return width, height, theta
+
+def get_proximity_risk(pose, map_metadata, safe_dist=0.5, robot_radius=0.18, sigma=None):
+    """
+    Utilizes the distance_map for O(1) lookup.
+    distance_map gives distance to nearest obstacle in meters.
+        Returns a value in [0 safe, 1 danger]:
+      - 0.0 at and beyond safe_dist
+      - smoothly increases below safe_dist
+      - 1.0 at robot_radius or closer
+    """
+    if safe_dist <= robot_radius:
+        raise ValueError("safe_dist must be larger than robot_radius")
+    
+    if sigma is None:
+        sigma = (safe_dist - robot_radius) / 3.0  # 99.7% within safe_dist
+
+    x, y = pose[0], pose[1]
+    res = map_metadata['resolution']
+    ox, oy = map_metadata['origin_x'], map_metadata['origin_y']
+    
+    # 1. Convert World Coordinates (meters) to Grid Coordinates (pixels)
+    grid_x = int((x - ox) / res)
+    grid_y = int((y - oy) / res)
+
+    # 2. Boundary Check
+    if not (0 <= grid_x < map_metadata['width'] and 0 <= grid_y < map_metadata['height']):
+        print("Pose out of map bounds for risk calculation.")
+        return 1.0 # Out of bounds is maximum risk
+
+    # 3. Distance Lookup (meters)
+    # distance_map was calculated in get_map_metadata using distance_transform_edt
+    dist_to_wall = map_metadata['distance_map'][grid_y, grid_x]
+
+    # 4. Risk Gradient Calculation
+    if dist_to_wall <= robot_radius:
+        # We are hitting or inside a wall
+        return 1.0
+    
+    if dist_to_wall >= safe_dist:
+        # We are in the safe zone
+        return 0.0
+    
+    # Smooth exponential risk (normalized)
+    # Anchored so:
+    #   risk(robot_radius) = 1
+    #   risk(safe_dist)   ≈ 0
+    risk = np.exp(-(dist_to_wall - robot_radius) / sigma)
+
+    return float(np.clip(risk, 0.0, 1.0))
+
+
+def is_pose_in_collision(pose, map_metadata, threshold=50, robot_radius=0.18):
+    x, y = pose[0], pose[1]
+    res = map_metadata['resolution']
+    ox, oy = map_metadata['origin_x'], map_metadata['origin_y']
+    data = map_metadata['data'] # Assumes this is the 2D array from core.py
+    
+    # Check a small box around the robot based on radius
+    steps = int(robot_radius / res)
+    grid_x = int((x - ox) / res)
+    grid_y = int((y - oy) / res)
+
+    for dx in range(-steps, steps + 1):
+        for dy in range(-steps, steps + 1):
+            curr_x = grid_x + dx
+            curr_y = grid_y + dy
+            
+            if 0 <= curr_x < map_metadata['width'] and 0 <= curr_y < map_metadata['height']:
+                # Indexing data[y, x] for 2D array
+                if data[curr_y, curr_x] >= threshold or data[curr_y, curr_x] == -1:
+                    return True
+            else:
+                return True # Out of bounds
+    return False
+
+def calculate_shannon_entropy(weights):
+    """
+    Calculates Shannon Entropy given a list or array of weights.
+    Weights should sum to 1.0.
+    """
+    weights = np.array(weights)
+    entropy = -np.sum(weights * np.log(weights + 1e-9))
+    return entropy
+
+def log_likelihood(scan_obs, scan_pred, sigma):
+    diff = scan_obs - scan_pred
+    return -0.5 * np.sum((diff / sigma) ** 2)

@@ -1,0 +1,110 @@
+import rclpy
+from rclpy.node import Node
+import numpy as np
+from nav_msgs.msg import OccupancyGrid
+from nav2_msgs.msg import Particle, ParticleCloud
+from geometry_msgs.msg import Pose, Quaternion
+import time
+
+class SeededParticleInitializer(Node):
+    def __init__(self):
+        super().__init__('seeded_particle_initializer')
+        
+        # 1. Parameters
+        self.declare_parameter('num_particles', 5000)
+        self.num_particles = self.get_parameter('num_particles').value
+        self.seed = 42
+        
+        # 2. Publisher & Subscriber
+        # We publish to /particle_cloud to set the initial belief
+        self.publisher_ = self.create_publisher(ParticleCloud, '/particle_cloud', 10)
+        
+        # We need the map to know where "free space" is
+        self.subscription = self.create_subscription(
+            OccupancyGrid,
+            '/map',
+            self.map_callback,
+            10)
+        
+        self.get_logger().info(f"Seeded Initializer started. Seed: {self.seed}")
+        self.initialized = False
+
+    def yaw_to_quaternion(self, yaw):
+        """Helper to convert yaw to ROS Quaternion"""
+        return Quaternion(
+            x=0.0,
+            y=0.0,
+            z=np.sin(yaw / 2.0),
+            w=np.cos(yaw / 2.0)
+        )
+
+    def map_callback(self, msg):
+        if self.initialized:
+            return
+
+        self.get_logger().info("Map received! Generating seeded particles...")
+        
+        # 1. Set the Seed
+        np.random.seed(self.seed)
+        
+        # 2. Identify Free Space
+        # OccupancyGrid data: 0 = free, 100 = occupied, -1 = unknown
+        data = np.array(msg.data)
+        free_indices = np.where(data == 0)[0]
+        
+        if len(free_indices) == 0:
+            self.get_logger().error("No free space found in map!")
+            return
+
+        # 3. Sample Particles
+        res = msg.info.resolution
+        origin_x = msg.info.origin.position.x
+        origin_y = msg.info.origin.position.y
+        width = msg.info.width
+        
+        # Randomly pick indices from free space
+        chosen_indices = np.random.choice(free_indices, size=self.num_particles)
+        
+        cloud_msg = ParticleCloud()
+        cloud_msg.header.stamp = self.get_clock().now().to_msg()
+        cloud_msg.header.frame_id = 'map'
+        
+        for idx in chosen_indices:
+            # Convert 1D index to 2D grid coordinates
+            grid_x = idx % width
+            grid_y = idx // width
+            
+            # Convert grid to world coordinates (centered in cell)
+            world_x = origin_x + (grid_x + 0.5) * res
+            world_y = origin_y + (grid_y + 0.5) * res
+            
+            # Random orientation
+            yaw = np.random.uniform(-np.pi, np.pi)
+            
+            # Create Particle
+            p = Particle()
+            p.pose.position.x = world_x
+            p.pose.position.y = world_y
+            p.pose.orientation = self.yaw_to_quaternion(yaw)
+            p.weight = 1.0 / self.num_particles
+            
+            cloud_msg.particles.append(p)
+
+        # 4. Publish (with a small delay to ensure subscribers are ready)
+        time.sleep(1.0) 
+        self.publisher_.publish(cloud_msg)
+        self.get_logger().info(f"Published {self.num_particles} seeded particles.")
+        
+        self.initialized = True
+        # Optional: shutdown node after successful init
+        # rclpy.shutdown()
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = SeededParticleInitializer()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()

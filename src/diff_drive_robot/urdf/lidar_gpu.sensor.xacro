@@ -12,10 +12,10 @@
       <ray>
         <scan>
           <horizontal>
-<!--If you adapt the settings for the lidar, also have to adapt the settings for the raycast_scan in Active Inference Control: src/active_inference_loc/models -->
-            <samples>180</samples>
-            <min_angle>-1.5708</min_angle>
-            <max_angle>1.5708</max_angle>
+          <!-- if you adapt here make sure to also update the number of beams in the active_inference_loc/models.py -->
+            <samples>360</samples>
+            <min_angle>-3.14159</min_angle>   <!-- -180° -->
+            <max_angle> 3.14159</max_angle>   <!-- +180° -->
           </horizontal>
         </scan>
         <range>

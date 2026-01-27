@@ -63,6 +63,14 @@ def generate_launch_description():
     ]
     )
 
+    # For Reproducibilty, we disable the automatic global localization call and create own particles/seed
+    seeded_particle_init = Node(
+        package='active_inference_loc',
+        executable='seeded_particle_initializer',
+        name='seeded_particle_initializer',
+        output='screen'
+    )
+
     viz_node = Node(
         package='active_inference_loc',
         executable='belief_monitor',
@@ -76,5 +84,9 @@ def generate_launch_description():
         enable_viz_arg,
         aic_control_node,
         init_global_localization,
-        viz_node
+        viz_node,
+        # TimerAction(
+        #     period=5.0,
+        #     actions=[seeded_particle_init]
+        # )
     ])

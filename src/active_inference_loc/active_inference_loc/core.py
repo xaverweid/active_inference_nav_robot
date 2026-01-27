@@ -1,6 +1,8 @@
 import numpy as np
-import time  # Added for performance tracking
-from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, is_pose_in_collision
+import time
+
+import scipy  # Added for performance tracking
+from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, is_pose_in_collision, get_proximity_risk, calculate_shannon_entropy, log_likelihood
 from .models import predict_motion, raycast_scan
 from std_msgs.msg import Float32MultiArray
 
@@ -8,26 +10,29 @@ class ActiveInferenceController:
     def __init__(self, logger):
         self.logger = logger
         self.metrics_pub = None
-        self.clusturer = ParticleClusturer(n_clusters=5) 
+        self.clusturer = ParticleClusturer()
         self.time_delta = 1.0  
         self.map_2d = None
         self.map_metadata = None
         self.current_particles = None
         self.current_weights = None
         self.actions_dict = ACTION_EFFECTS
+        self.shannon_entropy = None
+        self.lidar_sigma = 0.1  # Standard deviation for LiDAR likelihood model
 
         # --- TUNABLE PARAMETERS (The "Personality" of your Robot) ---
         # 1. Epistemic Weight (gamma): Curiosity. 
         # Higher = Robot explores more to reduce uncertainty.
-        self.alpha_epistemic = 10.0 
+        self.alpha_epistemic = 50.0 
 
         # 2. Pragmatic Weight (beta): Importance of following the "Goal/Safety".
         # Higher = Robot prioritizes safety/risk avoidance.
-        self.beta_pragmatic = 1.0 
+        # Keep beta_pragmatic * risk_penalty_factor = 1000 for having 1000 as maximum risk value.
+        self.beta_pragmatic = 2.0 
 
         # 3. Risk Penalty: The "cost" of a single collision.
         # This scales the pragmatic value before it is weighted by beta.
-        self.risk_penalty_factor = 300.0
+        self.risk_penalty_factor = 500.0
 
 
     def set_metrics_publisher(self, pub):
@@ -41,17 +46,30 @@ class ActiveInferenceController:
         self.map_2d = raw_data.reshape((self.map_metadata['height'], 
                                         self.map_metadata['width']))
         self.logger.info(f"Map 2D initialized: {self.map_2d.shape}")
+        
+        # Log map stats for debugging
+        obstacles = (self.map_2d >= 50) | (self.map_2d == -1)
+        self.logger.info(f"Map stats: Shape {self.map_2d.shape}, Obstacles: {np.sum(obstacles)}, Free: {np.sum(~obstacles)}, Unknown: {np.sum(self.map_2d == -1)}")
+        self.logger.info(f"Distance map range: {np.min(self.map_metadata['distance_map']):.3f} - {np.max(self.map_metadata['distance_map']):.3f} m")
 
-    def update_belief(self, points, weights, dt=1.0):
-        weight_sum = np.sum(weights)
-        if weight_sum > 1e-9:
-            normalized_weights = weights / weight_sum
-        else:
-            self.logger.warn("Particle weights collapsed to zero!")
-            return
+    def update_belief(self, points, dt=1.0):
+        
+        # --- NEW: VALIDITY FILTERING ---
+        if self.map_metadata is not None:
+            valid_indices = []
+            for i, p in enumerate(points):
+                # Check if particle is in free space (0)
+                # Note: using your utility function if it checks for map bounds
+                if not is_pose_in_collision(p, self.map_metadata):
+                    valid_indices.append(i)
+            
+            if len(valid_indices) > 0:
+                points = points[valid_indices]
+            else:
+                self.logger.warn("All particles are in collision! Keeping last known good belief.")
+                return
 
         self.current_particles = points
-        self.current_weights = normalized_weights
         self.time_delta = dt
 
     def is_ready(self):
@@ -67,12 +85,27 @@ class ActiveInferenceController:
 
         start_time = time.time()
         
-        # 1. CONDENSE BELIEF
-        representative_poses, rep_weights = self.clusturer.get_representative_clusters_from_np(
-            self.current_particles, 
-            self.current_weights
+        # 1. SAMPLE PARTICLES (For Pragmatic/Risk)
+        # Since weights are equal, we take a random uniform sample. 
+        # This sample naturally represents the probability density of the cloud.
+        num_total = len(self.current_particles)
+        sample_size = min(num_total, 200)
+        
+        # Randomly select indices without replacement
+        sample_indices = np.random.choice(num_total, sample_size, replace=False)
+        
+        # These represent the "possible bodies" of the robot
+        sample_particles = self.current_particles[sample_indices]
+        
+        # Since they are unweighted, we treat them all as equally likely (1/sample_size)
+        sample_weights = np.ones(sample_size) / sample_size
+         
+        # 2. CONDENSE BELIEF (For Epistemic/Info Gain)
+        representative_poses, rep_weights = self.clusturer.get_representative_clusters_from_gmm(
+            self.current_particles
         )
         
+        self.shannon_entropy = calculate_shannon_entropy(rep_weights)
         # Log how many clusters we actually found (might be < 5 if particles are tight)
         self.logger.info(f"Thinking... (Clustered into {len(representative_poses)} hypotheses)")
 
@@ -83,19 +116,20 @@ class ActiveInferenceController:
         for action in self.actions_dict.keys():
             action_start = time.time()
             
-            # Predict
-            pred_poses = np.array([
-                predict_motion(p, action, self.actions_dict, dt=self.time_delta) 
-                for p in representative_poses
-            ])
+            # Predict trajectory for clusters (Epistemic)
+            pred_clusters = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta) for p in representative_poses])
+            
+            # Predict trajectory for particles (Pragmatic)
+            pred_particles = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta) for p in sample_particles])
+            # Calculate components
+            # Note: We pass the particle predictions to pragmatic
+            raw_pragmatic = self.calculate_efe_pragmatic(pred_particles, sample_weights)
+            raw_epistemic = self.calculate_efe_epistemic(pred_clusters, rep_weights)
 
             # Calculate components
-            raw_epistemic = self.calculate_efe_epistemic(pred_poses, rep_weights)
             # Add a tiny penalty for staying still to encourage movement
             if action == 'WAIT':
                 raw_epistemic += 5.0
-
-            raw_pragmatic = self.calculate_efe_pragmatic(pred_poses, rep_weights)
 
             # WEIGHTED EFE: G = (Gamma * Ambiguity) + (Beta * Risk)
             # We minimize G. 
@@ -111,6 +145,7 @@ class ActiveInferenceController:
         # 3. SELECT ACTION
         best_action = min(efe_scores, key=efe_scores.get)
         best_detail = details[best_action]
+        
 
         # 4. METRICS & LOGGING
         total_time = time.time() - start_time
@@ -122,8 +157,8 @@ class ActiveInferenceController:
         if self.metrics_pub is not None:
             metrics_msg = Float32MultiArray()
             metrics_msg.data = [
-                float(best_detail['epistemic']), 
-                float(best_detail['pragmatic']), 
+                float(best_detail['epistemic']*self.alpha_epistemic), 
+                float(best_detail['pragmatic']*self.beta_pragmatic), 
                 float(efe_scores[best_action])
             ]
             self.metrics_pub.publish(metrics_msg)
@@ -138,25 +173,67 @@ class ActiveInferenceController:
         return best_action
     
     def calculate_efe_epistemic(self, predicted_poses, rep_weights):
-        # Raycasting is the biggest bottleneck
-        ray_start = time.time()
+        """
+        Expected posterior entropy
+        Compute the expected posterior entropy of the particle distribution after 
+        a hypothetical LiDAR measurement taken at that action.
+        We return the expected ambiguity (uncertainty) after taking that action, which should be minimized
+
+        """
         pred_scans = raycast_scan(
             poses_4d=predicted_poses,
             map_2d=self.map_2d,
             map_metadata=self.map_metadata
-        )
-        
-        # If the variance is very low, information gain is low
-        mean_scan = np.average(pred_scans, axis=0, weights=rep_weights)
-        variance = np.average((pred_scans - mean_scan) ** 2, axis=0, weights=rep_weights)
-        information_gain = np.sum(variance)
+        )  # (K, B)
 
-        return -float(information_gain) 
+        K, B = pred_scans.shape
 
-    def calculate_efe_pragmatic(self, predicted_poses, rep_weights):
-        expected_risk = 0.0
-        for pose, w in zip(predicted_poses, rep_weights):
-            if is_pose_in_collision(pose, self.map_metadata):
-                expected_risk += w
+        # weights of different cluster means
+        log_weights = np.log(rep_weights + 1e-12) 
+
+        expected_entropy = 0.0
+
+        # Loop over hypothetical measurements
+        for j in range(K):
+            z_hat_j = pred_scans[j]
+            # For each particle / cluster i, compute likelihood of z_hat_j
+            log_w_ij = np.zeros(K)
+            for i in range(K):
+                ll = log_likelihood(
+                    z_hat_j,
+                    pred_scans[i],
+                    sigma=self.lidar_sigma
+                )
+                log_w_ij[i] = log_weights[i] + ll
+
+            log_w_ij -= scipy.special.logsumexp(log_w_ij)
+            w_ij = np.exp(log_w_ij)
+
+            H_j = calculate_shannon_entropy(w_ij)
+            expected_entropy += rep_weights[j] * H_j
+
+        return float(expected_entropy)
+
+    def calculate_efe_pragmatic(self, pred_particles, sample_weights):
+        """
+        Receives predicted poses for ALL particles.
+        The weights are the same for each pose (comes from ParticleCloud, no weights given)
+        Returns the expected risk (weighted average) for 1 specific action.
+        total_risk should return a value between 0 and 1 before weighting by beta and risk_penalty_factor.
         
-        return expected_risk * self.risk_penalty_factor
+        G_pragmatic = sum( weight_i * risk(pose_i) )
+    
+        """
+        total_risk = 0.0
+        risks = []  # Temporary for debugging
+
+        for i in range(len(pred_particles)):
+            # Calculate risk for this specific particle
+            risk = get_proximity_risk(pred_particles[i], self.map_metadata)
+            
+            # Multiply by its probability (1/200 in our case)
+            total_risk += sample_weights[i] * risk
+            risks.append(risk)  # Collect for logging
+        
+        return total_risk * self.risk_penalty_factor
+        

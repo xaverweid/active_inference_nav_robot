@@ -1,3 +1,4 @@
+from .utils import is_pose_in_collision, calculate_shannon_entropy
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
@@ -7,7 +8,6 @@ from nav2_msgs.msg import ParticleCloud
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import numpy as np
-from sklearn.cluster import KMeans
 import threading
 
 # Importing your existing utilities
@@ -17,7 +17,7 @@ class BeliefMonitorNode(Node):
     def __init__(self):
         super().__init__('belief_monitor_node')
 
-        self.clusturer = ParticleClusturer(n_clusters=5)
+        self.clusturer = ParticleClusturer()
         self.map_metadata = None
         self.current_metrics = [0.0, 0.0, 0.0]
         self.latest_cloud_data = None
@@ -88,9 +88,12 @@ class BeliefMonitorNode(Node):
             return
 
         try:
-            raw_points, raw_weights = self.clusturer.cloud_to_numpy(cloud_msg)
+            raw_points = self.clusturer.cloud_to_numpy(cloud_msg)
             if len(raw_points) == 0: return
 
+            # 1. FILTER PARTICLES (Visual matching with core.py)
+            valid_mask = [not is_pose_in_collision(p, self.map_metadata) for p in raw_points]
+            raw_points = raw_points[valid_mask]
             rotated_points = np.zeros_like(raw_points)
             
             # Map coordinates rotation: 270 CW (equivalent to -90 CW)
@@ -106,12 +109,18 @@ class BeliefMonitorNode(Node):
             rotated_points[:, 3] = raw_points[:, 2]
 
             # Now that points are rotated, we cluster them
-            representative_poses, cluster_weights = self.clusturer.get_representative_clusters_from_np(rotated_points, raw_weights)
+            cluster_poses, cluster_weights = self.clusturer.get_representative_clusters_from_gmm(rotated_points)
             
-            shannon_h = -np.sum([w * np.log(w + 1e-9) for w in cluster_weights])
-            ess_val = 1.0 / (np.sum(raw_weights**2) + 1e-9)
-            diversity_ratio = (ess_val / len(raw_points)) * 100
-
+            # 2. CALCULATE BELIEF METRICS
+            # Shannon Entropy: Measures how "confused" the robot is between its 10 clusters
+            # H = -sum(p * log(p))
+            shannon_h = calculate_shannon_entropy(cluster_weights)
+            
+            # Filter Diversity: How even is the belief? 
+            # Max entropy is log(N_clusters). We show what % of that "spread" we have.
+            max_h = np.log(self.clusturer.n_clusters)
+            diversity_ratio = (shannon_h / max_h) * 100
+        
             # --- 3. RENDERING ---
             for artist in list(self.ax.collections) + list(self.ax.patches):
                 artist.remove()
@@ -121,23 +130,35 @@ class BeliefMonitorNode(Node):
             # Plot Rotated Particles
             self.ax.scatter(rotated_points[:, 0], rotated_points[:, 1], s=1, c='blue', alpha=0.1)
             # Assign labels for the rotated clusters
-            kmeans_viz = KMeans(n_clusters=len(representative_poses), n_init=5)
-            labels = kmeans_viz.fit_predict(rotated_points[:, :2]) 
+            # Use the GMM to predict labels for the particles directly
 
-            for i, (mx, my, ctheta, stheta) in enumerate(representative_poses):
+            labels = self.clusturer.gmm.predict(rotated_points)
+            # Normalization for colors (0 to max weight)
+            # This ensures the "best" cluster is always greenest
+            norm = plt.Normalize(vmin=0, vmax=np.max(cluster_weights))
+            cmap = plt.cm.RdYlGn
+            
+            for i, (mx, my, ctheta, stheta) in enumerate(cluster_poses):
+                weight = cluster_weights[i]
                 cluster_mask = (labels == i)
                 if np.sum(cluster_mask) < 3: continue
                 
+                # Determine Color based on Weight
+                # High weight = Green, Low weight = Red
+                color = cmap(norm(weight))
                 # Get ellipse for the rotated cluster
                 res = get_covariance_ellipse(rotated_points[cluster_mask, :2])
                 if res:
-                    w, h, ang = res
-                    color = plt.cm.plasma(i / self.clusturer.n_clusters)
-                    ell = Ellipse(xy=(mx, my), width=w, height=h, angle=ang, 
-                                  edgecolor=color, fc=color, lw=2, alpha=0.3, zorder=3)
+                    width, height, angle = res
+                    # Draw Belief Ellipse
+                    ell = Ellipse(xy=(mx, my), width=width, height=height, angle=angle, 
+                                edgecolor=color, fc=color, lw=2, alpha=0.4, zorder=3)
                     self.ax.add_patch(ell)
-                    # Arrow points correctly in rotated space
-                    self.ax.arrow(mx, my, 0.4*ctheta, 0.4*stheta, color='red', head_width=0.1, zorder=5)
+                    
+                    # Draw Heading Arrow (Red stays red for visibility)
+                    self.ax.arrow(mx, my, 0.4*ctheta, 0.4*stheta, color='red', 
+                                head_width=0.1, zorder=5, alpha=min(1.0, weight*5))
+                
             # Dashboard Update
             current_surprise = -np.log(np.max(cluster_weights) + 1e-9) 
             table_text = (

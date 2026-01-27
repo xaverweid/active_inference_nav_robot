@@ -1,7 +1,10 @@
 amcl:
   ros__parameters:
     # Set these to 0, but we will override them with a global reset as soon as aic_launch.py starts
+    use_map_topic: true
     set_initial_pose: true
+    always_reset_initial_pose: true
+
 
     initial_pose_x: 0.0
     initial_pose_y: 0.0
@@ -19,10 +22,9 @@ amcl:
     # Some versions of AMCL use this to force a rate
     save_pose_rate: 0.5
     # Increase particle count for global localization to cover the whole map
-    min_particles: 1000
+    min_particles: 500
     max_particles: 5000
     # This ensures it doesn't just stick to the initial pose if it's wrong
-    always_reset_initial_pose: true
     # Use simulation time from /clock topic (important for Gazebo)
     # should be optimal for the world.sdf file and the diff_drive_robot
     use_sim_time: true
@@ -68,11 +70,11 @@ amcl:
     recovery_alpha_slow: 0.0        # Slow exponential decay (0 = disabled)
     
     # Update configuration
-    update_min_d: 0.1              # Min distance threshold for update (meters)
-    update_min_a: 0.1              # Min angle threshold for update (radians)
+    update_min_d: 0.05              # Min distance threshold for update (meters)
+    update_min_a: 0.05              # Min angle threshold for update (radians)
     resample_interval: 1            # Resample particles every N updates
     tf_broadcast: true              # Broadcast map->odom transform
-    transform_tolerance: 0.5        # Transform tolerance in seconds
+    transform_tolerance: 1.0        # Transform tolerance in seconds
     
     # Publishing
     save_pose_rate: 5.0             # Rate to publish pose (Hz)
