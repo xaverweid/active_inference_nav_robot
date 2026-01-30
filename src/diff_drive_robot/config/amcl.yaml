@@ -10,14 +10,15 @@ amcl:
     initial_pose_y: 0.0
     initial_pose_a: 0.0
 
-    initial_cov_xx: 0.5
-    initial_cov_yy: 0.5
-    initial_cov_aa: 0.5
+    # Set high covariance since robot is highly uncertain where he is at the start
+    initial_cov_xx: 10.0
+    initial_cov_yy: 10.0
+    initial_cov_aa: 3.14
 
 
     # Update every 2/3 of a small move (currently FORWARD_SMALL': {'linear': 0.15, 'angular': 0.0}) (see utils.py for Action Commands)) and 1/2 of rotation
-    update_min_d: 0.1
-    update_min_a: 0.2
+    update_min_d: 0.05
+    update_min_a: 0.1
     
     # Some versions of AMCL use this to force a rate
     save_pose_rate: 0.5
@@ -66,9 +67,9 @@ amcl:
     likelihood_max_error: 0.1       # Max error for likelihood
     
     # Recovery (handling global localization, NOT kidnapped robot)
-    recovery_alpha_fast: 0.0        # Fast exponential decay (0 = disabled)
-    recovery_alpha_slow: 0.0        # Slow exponential decay (0 = disabled)
-    
+    recovery_alpha_fast: 0.1       # Fast exponential decay (0 = disabled)
+    recovery_alpha_slow: 0.001        # Slow exponential decay (0 = disabled)
+    resample_interval: 2
     # Update configuration
     update_min_d: 0.05              # Min distance threshold for update (meters)
     update_min_a: 0.05              # Min angle threshold for update (radians)

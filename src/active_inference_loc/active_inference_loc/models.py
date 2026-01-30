@@ -36,10 +36,10 @@ def predict_motion(pose_4d, action_type, action_dict, dt: float = 1.0):
 
 # --- 2. Simplified Raycaster (Needs the map!) ---
 # You'll need the map as a 2D numpy array and its metadata (resolution, origin)
-def raycast_scan(poses_4d, map_2d, map_metadata, fov_deg=360, num_beams=32):
+def raycast_scan(poses_4d, map_2d, map_metadata, fov_deg=360, num_beams=8):
     """
     fov_deg: Set this to match your real LiDAR (e.g., 180 or 360)
-    num_beams: Number of rays to simulate per particle, can be 8 or 16 preferably
+    num_beams: Number of rays to simulate per particle, can be 8 or 12/16 preferably
     """
     res = map_metadata['resolution']
     ox = map_metadata['origin_x']

@@ -19,7 +19,7 @@ class BeliefMonitorNode(Node):
 
         self.clusturer = ParticleClusturer()
         self.map_metadata = None
-        self.current_metrics = [0.0, 0.0, 0.0]
+        self.current_metrics = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # Placeholder for metrics
         self.latest_cloud_data = None
         self.lock = threading.Lock()
 
@@ -71,7 +71,7 @@ class BeliefMonitorNode(Node):
 
             self.ax.imshow(rotated_map, cmap='gray', origin='lower',
                            extent=self.rotated_extent, alpha=0.6)
-            self.ax.set_title("Robot Posterior Belief")
+            self.ax.set_title("Robot Belief Monitor")
 
     def cloud_callback(self, msg):
         with self.lock:
@@ -160,17 +160,24 @@ class BeliefMonitorNode(Node):
                                 head_width=0.1, zorder=5, alpha=min(1.0, weight*5))
                 
             # Dashboard Update
-            current_surprise = -np.log(np.max(cluster_weights) + 1e-9) 
+            # current_surprise = -np.log(np.max(cluster_weights) + 1e-9) 
             table_text = (
+                f"▼ PARAMETERS (fixed)\n"
+                f"alpha (epistemic):  {int(metrics[3]):.2f}\n"
+                f"beta  (pragmatic):   {int(metrics[4]):.2f}\n"
+                f"-------------------------------\n"
                 f"▼ BELIEF METRICS \n"
-                f"Shannon Entropy (H):  {shannon_h:.3f} nats\n"
-                f"Filter Diversity:     {diversity_ratio:.1f}%\n"
-                f"Variational F:        {current_surprise:.2f}\n"
+                f"Shannon H (GMM):    {shannon_h:.3f}\n"
+                f"Convergence:        {metrics[6]:.2f}\n"
+                #f"Filter Diversity:     {diversity_ratio:.1f}%\n"
+                #f"Variational F:        {current_surprise:.2f}\n"
                 f"-------------------------------\n"
                 f"▼ AIC POLICY (G)\n"
-                f"Expected Epistemic:   {metrics[0]:.2f}\n"
-                f"Expected Pragmatic:   {metrics[1]:.2f}\n"
-                f"Total Expected G:     {metrics[2]:.2f}"
+                f"Expected Epistemic: {metrics[0]:.2f}\n"
+                f"Expected Pragmatic: {metrics[1]:.2f}\n"
+                f"Total Expected G:   {metrics[2]:.2f}\n"
+                f"-------------------------------\n"
+                f"Runtime:            {int(metrics[5]):.2f}\n"
             )
             self.dashboard.set_text(table_text)
 

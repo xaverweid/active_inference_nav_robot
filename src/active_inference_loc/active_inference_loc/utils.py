@@ -88,8 +88,8 @@ class ParticleClusturer:
         
         # Weights_ are the mixing coefficients (The "Importance" of each cluster)
         # These automatically sum to 1.0
-        cluster_weights = self.gmm.weights_.tolist()
-
+        cluster_weights = self.gmm.weights_
+        
         return cluster_poses, cluster_weights
         
 # Utility Functions (non-class): generic ROS/map/geometry conversions
@@ -236,3 +236,33 @@ def calculate_shannon_entropy(weights):
 def log_likelihood(scan_obs, scan_pred, sigma):
     diff = scan_obs - scan_pred
     return -0.5 * np.sum((diff / sigma) ** 2)
+
+def calculate_convergence(representative_poses, rep_weights):
+    """
+    Computes the spatial spread of the GMM clusters.
+    Returns: value in meters (lower is more converged).
+    """
+    if len(representative_poses) == 0:
+        return 100.0 # High uncertainty if no clusters
+    
+    # 🔒 Enforce NumPy arrays
+    representative_poses = np.asarray(representative_poses)
+    rep_weights = np.asarray(rep_weights)
+    
+    # 1. Extract X and Y
+    coords = representative_poses[:, :2] # Shape (K, 2)
+    
+    # 2. Calculate Weighted Mean Position
+    weighted_mean = np.average(coords, axis=0, weights=rep_weights)
+    
+    # 3. Calculate Weighted Variance
+    # sum( w * (pos - mean)^2 )
+    sq_diff = (coords - weighted_mean)**2
+    weighted_var = np.average(sq_diff, axis=0, weights=rep_weights)
+    
+    # 4. Total Standard Deviation (Euclidean spread)
+    total_std = np.sqrt(np.sum(weighted_var))
+    
+    return float(total_std)
+
+
