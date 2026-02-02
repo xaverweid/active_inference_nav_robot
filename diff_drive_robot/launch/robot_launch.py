@@ -65,7 +65,7 @@ def generate_launch_description():
                         executable='create',
                         arguments=['-topic', 'robot_description',
                                    '-name', 'diff_bot',
-                                   '-x', '0.0', '-y', '0.0', '-z', '0.2','-Y', '3.141'],
+                                   '-x', '0.0', '-y', '0.0', '-z', '0.2','-Y', '0'],
                         output='screen'
     )
 
@@ -89,6 +89,7 @@ def generate_launch_description():
                     package='rviz2',
                     executable='rviz2',
                     arguments=['-d', rviz_config_file],
+                    parameters=[{'use_sim_time': True}],
                     output='screen',)]
     )
 
@@ -147,7 +148,7 @@ def generate_launch_description():
         declare_world,
 
         # Launch the nodes
-        # rviz2,
+        rviz2,
         rsp,
         gazebo_server,
         gazebo_client,

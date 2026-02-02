@@ -48,11 +48,11 @@ amcl:
     alpha5: 0.0
     
     # Measurement model (laser beam likelihoods)
-    z_hit: 0.75                    # Weight of hit measurement
+    z_hit: 0.9                   # Weight of hit measurement
     z_short: 0.1                  # Weight of short measurement
     z_max: 0.05                     # Weight of max range measurement
-    z_random: 0.1                   # Weight of random measurement
-    sigma_hit: 0.05                  # Std dev of hit measurement
+    z_random: 0.05                   # Weight of random measurement
+    sigma_hit: 0.1                  # Std dev of hit measurement
     lambda_short: 0.1               # Exponential decay for short measurements
     
     # Beam configuration

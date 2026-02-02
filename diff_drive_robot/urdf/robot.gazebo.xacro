@@ -45,15 +45,14 @@
 
 
     <!-- Choose one of the following LIDAR sensors by uncommenting the desired lines:  -->
-    <gazebo reference="laser">
-        <xacro:include filename="$(find diff_drive_robot)/urdf/lidar_gpu.sensor.xacro"/>
-        <xacro:lidar_gpu_sensor/>
-    </gazebo>
-
-    <!-- probably never use lidar/ray, since it doesnt work properly for harmonic, while gpu lidar does -->
     <!-- <gazebo reference="laser">
-        <xacro:include filename="$(find diff_drive_robot)/urdf/lidar_ray.sensor.xacro"/>
-        <xacro:lidar_ray_sensor/>
-    </gazebo> -->
+        <xacro:include filename="$(find diff_drive_robot)/urdf/lidar_gpu_360_sensor.xacro"/>
+        <xacro:lidar_gpu_360_sensor/>
+    </gazebo>  -->
+
+    <gazebo reference="laser">
+        <xacro:include filename="$(find diff_drive_robot)/urdf/lidar_gpu_180_sensor.xacro"/>
+        <xacro:lidar_gpu_180_sensor/>
+    </gazebo>
 
 </robot>

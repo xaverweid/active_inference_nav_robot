@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="lidar_gpu_180_sensor" params="">
+    <sensor name="laser" type="gpu_lidar">
+      <pose>0 0 0 0 0 0</pose>
+      <update_rate>10</update_rate>
+      <visualize>true</visualize>
+      <topic>scan</topic>
+      <always_on>true</always_on>        
+      <gz_frame_id>laser</gz_frame_id>
+      <ray>
+        <scan>
+          <horizontal>
+          <!-- if you adapt here make sure to also update the number of beams in the active_inference_loc/models.py -->
+            <samples>180</samples>
+            <min_angle>-1.57</min_angle>   <!-- -90° -->
+            <max_angle> 1.57</max_angle>   <!-- +90° -->
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.3</min>
+          <max>12</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+    </sensor>
+  </xacro:macro>
+
+</robot>
+
+

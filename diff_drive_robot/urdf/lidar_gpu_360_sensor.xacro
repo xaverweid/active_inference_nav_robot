@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <xacro:macro name="lidar_gpu_sensor" params="">
+  <xacro:macro name="lidar_gpu_360_sensor" params="">
     <sensor name="laser" type="gpu_lidar">
       <pose>0 0 0 0 0 0</pose>
       <update_rate>10</update_rate>
@@ -14,8 +14,8 @@
           <horizontal>
           <!-- if you adapt here make sure to also update the number of beams in the active_inference_loc/models.py -->
             <samples>360</samples>
-            <min_angle>-3.14159</min_angle>   <!-- -180° -->
-            <max_angle> 3.14159</max_angle>   <!-- +180° -->
+            <min_angle>-3.14</min_angle>   <!-- -180° -->
+            <max_angle> 3.14</max_angle>   <!-- +180° -->
           </horizontal>
         </scan>
         <range>
