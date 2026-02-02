@@ -73,16 +73,16 @@ This term penalizes actions that are likely to result in unsafe future positions
 
 The Active Inference Controller (AIC) selects the action that minimizes Expected Free Energy:
 
-π∗ =arg ⁡min ⁡π(Entropy * alpha_epistemic + Collision Risk * beta_pragmatic)
+π∗ = arg ⁡min ⁡π (Entropy * alpha_epistemic + Collision Risk * beta_pragmatic)
 
 This naturally balances:
 
 - Exploration (reduce belief uncertainty)
 - Safety (avoid collisions)
 
-## 4. The Robot executes the selected action.
+The Robot executes the selection action.
 
-## 5. Localization Update (AMCL)
+## 4. Localization Update (AMCL)
 
 AMCL receives new odometry and LiDAR measurements
 
@@ -90,12 +90,12 @@ Particles are moved accordingly
 
 This is where localization actually happens. Active Inference does not update the belief — it only selects actions.
 
-## 6. Repeat from step 2 until Convergence has been reached.
+## 5. Repeat from step 2 until Convergence has been reached.
 
 - Convergence: the spatial spread of the GMM clusters < 0.20
 
 
-## Key Takeaways
+### Key Takeaways
 
 AMCL performs probabilistic localization.
 
@@ -109,7 +109,7 @@ Minimize collision risk (pragmatic value)
 The system enables active global localization without modifying AMCL itself.
 
 
-## Launch & Configuration
+### Launch & Configuration
 
 This node is designed to be launched after the base robot simulation is active (diff_drive_robot robot_launch.py)
 
