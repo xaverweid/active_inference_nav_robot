@@ -15,11 +15,9 @@ Supported for [Ubuntu 24.04](https://releases.ubuntu.com/noble/) & [ROS2 Jazzy](
 
 This project integrates Active Inference for action selection with AMCL (Adaptive Monte Carlo Localization) to improve global localization by actively reducing belief uncertainty while avoiding collisions.
 
-The key idea is:
-
 AMCL performs localization; Active Inference selects actions that are expected to improve localization and maintain safety.
 
-### High-Level Overview
+# High-Level Overview
 
 At each control step, the robot:
 
@@ -31,14 +29,15 @@ Selects the action that best trades off information gain (epistemic value) and c
 
 Executes the action and updates localization using real sensor data.
 
-### Algorithm Description
-1. Belief Estimation (AMCL)
+# Algorithm
+
+## 1. Belief Estimation (AMCL)
 
 AMCL processes incoming LiDAR data (and odometry)
 
 Outputs a set of belief hypotheses, where each particle represents a possible robot pose.
 
-2. Expected Free Energy Calculation
+## 2. Expected Free Energy Calculation
 
 For each candidate action π, the Expected Free Energy G(π) is computed as the sum of Epistemic Value (uncertainty reduction) * alpha_epistemic and Pragmatic Value (collision risk) * beta_pragmatic
 
@@ -70,7 +69,7 @@ Steps:
 
 This term penalizes actions that are likely to result in unsafe future positions.
 
-3. Action Selection (Active Inference Controller)
+## 3. Action Selection (Active Inference Controller)
 
 The Active Inference Controller (AIC) selects the action that minimizes Expected Free Energy:
 
@@ -81,9 +80,9 @@ This naturally balances:
 - Exploration (reduce belief uncertainty)
 - Safety (avoid collisions)
 
-4. The Robot executes the selected action.
+## 4. The Robot executes the selected action.
 
-5. Localization Update (AMCL)
+## 5. Localization Update (AMCL)
 
 AMCL receives new odometry and LiDAR measurements
 
@@ -91,7 +90,7 @@ Particles are moved accordingly
 
 This is where localization actually happens. Active Inference does not update the belief — it only selects actions.
 
-6. Repeat from step 2 until Convergence has been reached.
+## 6. Repeat from step 2 until Convergence has been reached.
 
 - Convergence: the spatial spread of the GMM clusters < 0.20
 
@@ -106,8 +105,8 @@ Reduce belief entropy (epistemic value)
 
 Minimize collision risk (pragmatic value)
 
-The system enables active global localization without modifying AMCL itself.
 
+The system enables active global localization without modifying AMCL itself.
 
 
 ## Launch & Configuration
