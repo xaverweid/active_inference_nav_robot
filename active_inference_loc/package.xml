@@ -8,11 +8,18 @@
   <license>TODO: License declaration</license>
 
   <depend>rclpy</depend>
+  <depend>diff_drive_robot</depend> 
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>nav2_msgs</depend>
   <depend>tf_transformations</depend>
   <depend>python3-transforms3d</depend>
+
+  <depend>python3-numpy</depend>
+  <depend>python3-scipy</depend>
   <depend>python3-sklearn</depend>
+  <depend>python3-matplotlib</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
