@@ -2,20 +2,25 @@
 
 This package contains the core intelligence for an autonomous robot using the Active Inference Framework (AIF). Unlike traditional navigation which follows pre-defined paths, this "Brain" node treats global localization as an inference problem—choosing actions that satisfy both epistemic value (information gain) and pragmatic value (collision avoidance)
 
-
-## Work in progress
-The package is still being worked on and in development
-
-
-## Supported on
-
-Supported for [Ubuntu 24.04](https://releases.ubuntu.com/noble/) & [ROS2 Jazzy](https://docs.ros.org/en/jazzy/Installation.html)  compatibility with other versions has not been checked.
-
 ## Active Inference–Driven Action Selection for AMCL Localization
 
 This project integrates Active Inference for action selection with AMCL (Adaptive Monte Carlo Localization) to improve global localization by actively reducing belief uncertainty while avoiding collisions.
 
 AMCL performs localization; Active Inference selects actions that are expected to improve localization and maintain safety.
+
+### Work in progress
+The package is still being worked on and in development
+
+### Supported on
+
+Supported for [Ubuntu 24.04](https://releases.ubuntu.com/noble/) & [ROS2 Jazzy](https://docs.ros.org/en/jazzy/Installation.html)  compatibility with other versions has not been checked.
+
+### Launch & Configuration
+
+This node is designed to be launched after the base robot simulation is active (diff_drive_robot robot_launch.py)
+
+### Launch the AIC Brain
+ros2 launch active_inference_loc aic_launch.py
 
 # High-Level Overview
 
@@ -95,25 +100,5 @@ This is where localization actually happens. Active Inference does not update th
 - Convergence: the spatial spread of the GMM clusters < 0.20
 
 
-### Key Takeaways
 
-AMCL performs probabilistic localization.
-
-Active Inference selects actions that are expected to:
-
-Reduce belief entropy (epistemic value)
-
-Minimize collision risk (pragmatic value)
-
-
-The system enables active global localization without modifying AMCL itself.
-
-
-### Launch & Configuration
-
-This node is designed to be launched after the base robot simulation is active (diff_drive_robot robot_launch.py)
-
-
-### Launch the AIC Brain
-ros2 launch active_inference_loc aic_launch.py
 
