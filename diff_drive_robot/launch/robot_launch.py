@@ -5,7 +5,7 @@ from launch.conditions import IfCondition
 from ament_index_python.packages import get_package_share_directory
 from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, GroupAction, SetEnvironmentVariable, ExecuteProcess, TimerAction
+from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, GroupAction, SetEnvironmentVariable, ExecuteProcess, TimerAction, LogInfo
 
 def generate_launch_description():
 
@@ -129,16 +129,19 @@ def generate_launch_description():
                     {'node_names': ['map_server', 'amcl']}]
     )
 
-    # AMCL trigger global localization service call at startup - was moved to aic_launch.py
-    # init_global_localization = TimerAction(
-    #     period=3.0, # Wait for AMCL to fully activate
-    #     actions=[
-    #         ExecuteProcess(
-    #             cmd=['ros2', 'service', 'call', '/reinitialize_global_localization', 'std_srvs/srv/Empty', '{}'],
-    #             output='screen'
-    #         )
-    #     ]
-    # )
+    wait_msg = LogInfo(msg="[WAITING] AMCL is warming up... please wait 5 seconds.")
+
+    init_global_localization = TimerAction(
+        period=5.0,  # Give the lifecycle manager enough time to activate AMCL
+        actions=[
+            LogInfo(msg="[ACTION] Triggering Global Localization now!"),
+            ExecuteProcess(
+                cmd=['ros2', 'service', 'call', '/reinitialize_global_localization', 'std_srvs/srv/Empty', '{}'],
+                output='screen'
+            ),
+            LogInfo(msg="[SUCCESS] Particles scattered. You can now launch aic_launch.py!")
+        ]
+    )
 
     # Launch them all!
     return LaunchDescription([
@@ -157,5 +160,6 @@ def generate_launch_description():
         start_map_server,
         start_amcl,
         start_lifecycle_manager,
-        #init_global_localization,
+        wait_msg,
+        init_global_localization
     ])

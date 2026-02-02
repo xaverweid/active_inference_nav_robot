@@ -18,7 +18,7 @@ class AICNode(Node):
         self.time_delta = 1.0  # seconds
 
       # --- Replace the init_time lines with this ---
-        self.recording_delay = 0.0  # Seconds to wait
+        self.recording_delay = 80.0  # Seconds to wait
         self.ticks_to_wait = int(self.recording_delay / self.time_delta)
         self.ticks_passed = 0
 
