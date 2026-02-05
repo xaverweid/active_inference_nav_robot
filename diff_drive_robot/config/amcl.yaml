@@ -17,8 +17,8 @@ amcl:
 
 
     # Update every 2/3 of a small move (currently FORWARD_SMALL': {'linear': 0.15, 'angular': 0.0}) (see utils.py for Action Commands)) and 1/2 of rotation
-    update_min_d: 0.05
-    update_min_a: 0.1
+    update_min_d: 0.10
+    update_min_a: 0.15
     
     # Some versions of AMCL use this to force a rate
     save_pose_rate: 0.5
@@ -48,9 +48,9 @@ amcl:
     alpha5: 0.0
     
     # Measurement model (laser beam likelihoods)
-    z_hit: 0.9                   # Weight of hit measurement
-    z_short: 0.1                  # Weight of short measurement
-    z_max: 0.05                     # Weight of max range measurement
+    z_hit: 0.93                   # Weight of hit measurement
+    z_short: 0.01                  # Weight of short measurement
+    z_max: 0.01                     # Weight of max range measurement
     z_random: 0.05                   # Weight of random measurement
     sigma_hit: 0.1                  # Std dev of hit measurement
     lambda_short: 0.1               # Exponential decay for short measurements

@@ -1,8 +1,10 @@
 import numpy as np
 from sklearn.mixture import GaussianMixture
+import inspect
 from nav2_msgs.msg import ParticleCloud
 import scipy.ndimage as ndi
-import matplotlib.pyplot as plt
+
+print(inspect.signature(GaussianMixture.fit))
 
 #This file is for specialized tools that don't make decisions but perform heavy lifting or data transformation.
 #Actions, refine which ones you want
@@ -37,62 +39,91 @@ class ParticleClusturer:
         self.n_clusters = n_clusters
         self.gmm = None  # Will hold the GaussianMixture model
 
-    def cloud_to_numpy(self, msg: ParticleCloud):
+    def get_representative_clusters_from_gmm(self, points_4d, weights):
         """
-        Converts a nav2_msgs/ParticleCloud message to: 
-        - points: (N, 4) numpy array [x, y, cos(yaw), sin(yaw)]
-        """
-        points_4d = []
-
-        for p in msg.particles:
-            # Extract position
-            x = p.pose.position.x
-            y = p.pose.position.y
-            
-            # 1. Convert Quaternion to Yaw (theta)
-            q = p.pose.orientation
-
-            theta = np.arctan2(2.0 * (q.w * q.z + q.x * q.y), 
-                           1.0 - 2.0 * (q.y**2 + q.z**2))
-        
-            # 2. Store as 4D vector
-            points_4d.append([x, y, np.cos(theta), np.sin(theta)])
-
-        return np.array(points_4d)
-
-    def get_representative_clusters_from_gmm(self, points_4d):
-        """
-        Runs GMM on unweighted ROS particles
-        Input: points_4d (N, 4) -> [x, y, cos, sin]
+        Runs GMM on weighted ROS particles
+        Input: 
+            - points_4d (N, 4) -> [x, y, cos, sin]
+            - weights (N,) -> particle weights (should sum to 1.0)
         Output: 
-       - cluster_poses: The center (mean) of each Gaussian
-       - cluster_weights: The 'importance' of each Gaussian (0.0 to 1.0)
+            - cluster_poses: The center (mean) of each Gaussian
+            - cluster_weights: The 'importance' of each Gaussian (0.0 to 1.0)
         """
-
+        # Validate inputs
+        if len(points_4d) != len(weights):
+            raise ValueError(
+                f"Length mismatch: points_4d has {len(points_4d)} elements "
+                f"but weights has {len(weights)} elements. They must be equal."
+            )
+        
+        if len(points_4d) == 0:
+            raise ValueError("Cannot cluster empty points array")
+        
+        # Resample points according to weights (for older scikit-learn versions)
+        n_samples = len(points_4d)
+        indices = np.random.choice(
+            n_samples, 
+            size=n_samples, 
+            replace=True, 
+            p=weights
+        )
+        resampled_points = points_4d[indices]
+        
         # 1. Initialize GMM
-        # n_components is your self.n_clusters (e.g., 10)
         self.gmm = GaussianMixture(
             n_components=self.n_clusters, 
             covariance_type='full', 
             max_iter=100,
             random_state=42
         )
-
-        # 2. Fit to the points
-        # Since particles are unweighted, we don't need sample_weight
-        self.gmm.fit(points_4d)
-
-        # 3. Extract Results
-        # Means are the representative poses (Hypotheses)
-        cluster_poses = [tuple(mean) for mean in self.gmm.means_]
         
-        # Weights_ are the mixing coefficients (The "Importance" of each cluster)
-        # These automatically sum to 1.0
+        # 2. Fit to the resampled points
+        self.gmm.fit(resampled_points)
+        
+        # 3. Extract Results
+        cluster_poses = [tuple(mean) for mean in self.gmm.means_]
         cluster_weights = self.gmm.weights_
         
         return cluster_poses, cluster_weights
         
 # Utility Functions (non-class): generic ROS/map/geometry conversions
+
+def cloud_to_numpy(msg: ParticleCloud):
+    """
+    Converts a nav2_msgs/ParticleCloud message to: 
+    - points: (N, 4) numpy array [x, y, cos(yaw), sin(yaw)]
+    - weights: (N,) numpy array of normalized weights
+    """
+    n = len(msg.particles)
+    points_4d = np.zeros((n, 4))
+    weights = np.zeros(n)
+
+    for i, p in enumerate(msg.particles):
+        # Position
+        points_4d[i, 0] = p.pose.position.x
+        points_4d[i, 1] = p.pose.position.y
+        
+        # Orientation
+        q = p.pose.orientation
+        # Fast Quaternion to Yaw (Inline to save function call overhead)
+        # yaw = atan2(2(wz + xy), 1 - 2(y^2 + z^2))
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        theta = np.arctan2(siny_cosp, cosy_cosp)
+        
+        points_4d[i, 2] = np.cos(theta)
+        points_4d[i, 3] = np.sin(theta)
+        
+        weights[i] = p.weight
+
+    # Normalization (Vectorized)
+    w_sum = np.sum(weights)
+    if w_sum > 0:
+        weights /= w_sum
+    else:
+        weights[:] = 1.0 / n
+
+    return points_4d, weights
 
 def ros_pose_to_np(pose_msg):
     # Convert ROS Pose to numpy array [x, y, theta]
@@ -232,10 +263,6 @@ def calculate_shannon_entropy(weights):
     weights = np.array(weights)
     entropy = -np.sum(weights * np.log(weights + 1e-9))
     return entropy
-
-def log_likelihood(scan_obs, scan_pred, sigma):
-    diff = scan_obs - scan_pred
-    return -0.5 * np.sum((diff / sigma) ** 2)
 
 def calculate_convergence(representative_poses, rep_weights):
     """

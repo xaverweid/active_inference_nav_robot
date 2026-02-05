@@ -65,7 +65,7 @@ def generate_launch_description():
                         executable='create',
                         arguments=['-topic', 'robot_description',
                                    '-name', 'diff_bot',
-                                   '-x', '0.0', '-y', '0.0', '-z', '0.2','-Y', '0'],
+                                   '-x', '-4.0', '-y', '-4.0', '-z', '0.2','-Y', '0'],
                         output='screen'
     )
 
@@ -127,7 +127,7 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True},
                     {'autostart': True},
                     {'node_names': ['map_server', 'amcl']}]
-    )
+    )    
 
     wait_msg = LogInfo(msg="[WAITING] AMCL is warming up... please wait 5 seconds.")
 
@@ -139,7 +139,15 @@ def generate_launch_description():
                 cmd=['ros2', 'service', 'call', '/reinitialize_global_localization', 'std_srvs/srv/Empty', '{}'],
                 output='screen'
             ),
-            LogInfo(msg="[SUCCESS] Particles scattered. You can now launch aic_launch.py!")
+        ]
+    )
+
+    final_ready_msg = TimerAction(
+        period=6.0,  # slightly after AMCL activation
+        actions=[
+            LogInfo(
+                msg="[READY] For Active Inference Control, you can now launch aic_launch.py!"
+            )
         ]
     )
 
@@ -151,7 +159,7 @@ def generate_launch_description():
         declare_world,
 
         # Launch the nodes
-        rviz2,
+        # rviz2,
         rsp,
         gazebo_server,
         gazebo_client,
@@ -161,5 +169,6 @@ def generate_launch_description():
         start_amcl,
         start_lifecycle_manager,
         wait_msg,
-        init_global_localization
+        init_global_localization,
+        final_ready_msg
     ])

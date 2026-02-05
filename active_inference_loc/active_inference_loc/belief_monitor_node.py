@@ -1,17 +1,15 @@
-from .utils import is_pose_in_collision, calculate_shannon_entropy
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
 from nav_msgs.msg import OccupancyGrid
 from std_msgs.msg import Float32MultiArray
-from nav2_msgs.msg import ParticleCloud
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import numpy as np
 import threading
 
 # Importing your existing utilities
-from .utils import get_map_metadata, ParticleClusturer, get_covariance_ellipse
+from .utils import get_map_metadata, ParticleClusturer, get_covariance_ellipse, calculate_shannon_entropy
 
 class BeliefMonitorNode(Node):
     def __init__(self):
@@ -19,20 +17,20 @@ class BeliefMonitorNode(Node):
 
         self.clusturer = ParticleClusturer()
         self.map_metadata = None
-        self.current_metrics = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # Placeholder for metrics
+        self.current_metrics = None  # Will be set once metrics are received
         self.latest_cloud_data = None
+        self.latest_weights = None
         self.lock = threading.Lock()
 
         map_qos = QoSProfile(durability=DurabilityPolicy.TRANSIENT_LOCAL, depth=1)
         particle_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.VOLATILE,
             history=HistoryPolicy.KEEP_LAST,
             depth=1
         )
 
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, map_qos)
-        self.cloud_sub = self.create_subscription(ParticleCloud, '/particle_cloud', self.cloud_callback, particle_qos)
+        self.cloud_sub = self.create_subscription(Float32MultiArray, '/belief/particles_filtered', self.cloud_callback, particle_qos)
         self.metrics_sub = self.create_subscription(Float32MultiArray, '/aic_metrics', self.metrics_callback, 10)
 
         plt.ion()
@@ -45,11 +43,6 @@ class BeliefMonitorNode(Node):
                                       zorder=100)
         
         self.get_logger().info("Belief Monitor Node Started")
-
-    def metrics_callback(self, msg):
-        with self.lock:
-            if len(msg.data) >= 3:
-                self.current_metrics = msg.data
 
     def map_callback(self, msg):
         if self.map_metadata is None:
@@ -72,44 +65,74 @@ class BeliefMonitorNode(Node):
             self.ax.imshow(rotated_map, cmap='gray', origin='lower',
                            extent=self.rotated_extent, alpha=0.6)
             self.ax.set_title("Robot Belief Monitor")
+            
+    def metrics_callback(self, msg):
+        with self.lock:
+            if len(msg.data) >= 3:
+                self.current_metrics = msg.data
 
     def cloud_callback(self, msg):
-        with self.lock:
-            self.latest_cloud_data = msg
+        # 1. DO THE HEAVY LIFTING OUTSIDE THE LOCK
+        # Convert the flat list from the message into a structured NumPy array
+        try:
+            # We reshape to -1 rows and 5 columns (x, y, cos, sin, weight)
+            raw_data = np.array(msg.data).reshape(-1, 5)
+            
+            # Extract columns
+            points = raw_data[:, :2]           # x, y
+            cos_yaw = raw_data[:, 2]
+            sin_yaw = raw_data[:, 3]
+            weights = raw_data[:, 4]
+            
+            # Stack them into a format your plotter expects (x, y, cos, sin)
+            processed_cloud = np.column_stack((points, cos_yaw, sin_yaw))
 
-    def update_plot(self):
-        cloud_msg = None
-        with self.lock:
-            cloud_msg = self.latest_cloud_data
-            self.latest_cloud_data = None 
-            metrics = self.current_metrics
-
-        if cloud_msg is None or self.map_metadata is None:
+        except Exception as e:
+            self.get_logger().error(f"Failed to reshape particle data: {e}")
             return
 
-        try:
-            raw_points = self.clusturer.cloud_to_numpy(cloud_msg)
-            if len(raw_points) == 0: return
+        # 2. UPDATE SHARED DATA INSIDE THE LOCK
+        with self.lock:
+            # Store both the points and weights so the main loop can use them
+            self.latest_cloud_data = processed_cloud
+            self.latest_weights = weights
 
-            # 1. FILTER PARTICLES (Visual matching with core.py)
-            valid_mask = [not is_pose_in_collision(p, self.map_metadata) for p in raw_points]
-            raw_points = raw_points[valid_mask]
-            rotated_points = np.zeros_like(raw_points)
+    def listener_callback(self, msg):
+        # Convert back to (N, 4) in one line
+        data = np.array(msg.data).reshape(-1, 4)
+        particles = data[:, :3] # x, y, yaw
+        weights = data[:, 3]    # weights
+    
+        self.plotter.update(particles, weights)
+        
+    def update_plot(self):
+        with self.lock:
+            if self.current_metrics is None or self.latest_cloud_data is None or self.latest_weights is None:
+                self.get_logger().info("Waiting for both metrics and particle data...")
+                self.get_logger().info(f"Metrics: {self.current_metrics}, Cloud Data: {self.latest_cloud_data is not None}, Weights: {self.latest_weights is not None}")
+                return
             
-            # Map coordinates rotation: 270 CW (equivalent to -90 CW)
+            raw_points = self.latest_cloud_data.copy()
+            weights = self.latest_weights.copy()
+            metrics = list(self.current_metrics)
+
+            self.latest_cloud_data = None
+            self.latest_weights = None
+
+        try:
+            # 1. ROTATE PARTICLE DATA 270 CW (equivalent to -90 CW) for synchronization with the map
+            rotated_points = np.zeros_like(raw_points)
             # New X = -Old Y
             # New Y = Old X
             rotated_points[:, 0] = -raw_points[:, 1]  
-            rotated_points[:, 1] = raw_points[:, 0] 
-            
-            # Heading rotation: 270 CW
+            rotated_points[:, 1] = raw_points[:, 0]   
             # New Cos = -Old Sin
             # New Sin = Old Cos
             rotated_points[:, 2] = -raw_points[:, 3]
             rotated_points[:, 3] = raw_points[:, 2]
 
             # Now that points are rotated, we cluster them
-            cluster_poses, cluster_weights = self.clusturer.get_representative_clusters_from_gmm(rotated_points)
+            cluster_poses, cluster_weights = self.clusturer.get_representative_clusters_from_gmm(rotated_points, weights)
             
             # 2. CALCULATE BELIEF METRICS
             # Shannon Entropy: Measures how "confused" the robot is between its 10 clusters
@@ -163,8 +186,8 @@ class BeliefMonitorNode(Node):
             # current_surprise = -np.log(np.max(cluster_weights) + 1e-9) 
             table_text = (
                 f"▼ PARAMETERS (fixed)\n"
-                f"alpha (epistemic):  {int(metrics[3]):.2f}\n"
-                f"beta  (pragmatic):   {int(metrics[4]):.2f}\n"
+                f"alpha (epistemic):  {metrics[3]:.2f}\n"
+                f"beta  (pragmatic):  {metrics[4]:.2f}\n"
                 f"-------------------------------\n"
                 f"▼ BELIEF METRICS \n"
                 f"Shannon H (GMM):    {shannon_h:.3f}\n"

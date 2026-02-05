@@ -1,7 +1,7 @@
 import numpy as np
 
 # --- 1. Motion Model ---
-def predict_motion(pose_4d, action_type, action_dict, dt: float = 1.0):
+def predict_motion(pose_4d, action_type, action_dict, dt):
     """
     Predicts the future state of a cluster center over a fixed time step dt.
     pose_4d: [x, y, cos(theta), sin(theta)]
