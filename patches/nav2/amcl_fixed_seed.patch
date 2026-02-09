@@ -1,0 +1,15 @@
+diff --git a/nav2_amcl/src/amcl_node.cpp b/nav2_amcl/src/amcl_node.cpp
+index 9775a769..8867d935 100644
+--- a/nav2_amcl/src/amcl_node.cpp
++++ b/nav2_amcl/src/amcl_node.cpp
+@@ -494,6 +494,10 @@ AmclNode::globalLocalizationCallback(
+ 
+   RCLCPP_INFO(get_logger(), "Initializing with uniform distribution");
+ 
++  // Resets the random number generator to a fixed sequence (Scientific Control)
++  srand48(42); 
++  // -----------------------------
++  
+   pf_init_model(
+     pf_, (pf_init_model_fn_t)AmclNode::uniformPoseGenerator,
+     reinterpret_cast<void *>(map_));
