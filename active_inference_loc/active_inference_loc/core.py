@@ -4,15 +4,17 @@ from nav2_msgs.msg import Particle, ParticleCloud
 import scipy  # Added for performance tracking
 from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence
 from .models import predict_motion, raycast_scan
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, String
 from geometry_msgs.msg import Pose, Quaternion, Point
 import math
 
 class ActiveInferenceController:
-    def __init__(self, logger):
+    def __init__(self, logger, algo_mode='active_inf'):
         self.logger = logger
+        self.algo_mode = algo_mode  # Default mode, can be overridden by launch argument
         self.metrics_pub = None
         self.particle_data_pub = None
+        self.status_pub = None
         self.clusturer = ParticleClusturer()
         self.time_delta = 1.0  
         self.map_2d = None
@@ -22,10 +24,12 @@ class ActiveInferenceController:
         self.actions_dict = ACTION_EFFECTS
         self.shannon_entropy = None
         self.runtime_counter = 0
-        self.convergence_parameter = 0
+        self.max_runtime = 300  # Max steps before auto-failure to prevent infinite loops
+        self.convergence_parameter = 100
         self.lidar_sigma = 0.15  # Standard deviation for LiDAR likelihood model
         self.wait_streak = 0
         self.clock = None
+        self.convergence_threshold = 0.20  # Threshold for declaring convergence (tunable)
 
         # --- TUNABLE PARAMETERS (The "Personality" of your Robot) ---
         # 1. Epistemic Weight (gamma): Curiosity. 
@@ -50,6 +54,17 @@ class ActiveInferenceController:
     def set_metrics_publisher(self, pub):
         self.metrics_pub = pub
 
+    def set_status_publisher(self, pub):
+        self.status_pub = pub
+
+    def publish_status(self, status_message):
+        """Publish trial status to /trial_status topic"""
+        if self.status_pub is not None:
+            msg = String()
+            msg.data = status_message
+            self.status_pub.publish(msg)
+            self.get_logger().info(f'Trial Status: {status_message}')
+   
     def set_clock(self, clock):
         self.clock = clock
 
@@ -175,6 +190,33 @@ class ActiveInferenceController:
         if not self.is_ready():
             return None
 
+        if self.mode == "active_inf":
+            return self._run_active_inference()
+            
+        elif self.mode == "random_walk":
+            return self._run_random_walk()
+            
+        elif self.mode == "passive_amcl":
+            # Passive usually means: don't move, just update belief if someone else moves me
+            # Or just sit still to observe.
+            return self._run_passive_amcl()
+            
+        elif self.mode == "classical_amcl":
+            # Classical AMCL mode: Update belief but don't take action
+            return self._run_classical_amcl()
+        
+        elif self.mode == "standard_dwa":
+            # If standard DWA is handled by another node (like Nav2), 
+            # this controller should probably do nothing (return None)
+            # so it doesn't fight for control of /cmd_vel.
+            return self._run_standard_dwa()  # This could be a placeholder that just returns None, since DWA is external.
+
+        else:
+            self.get_logger().warn(f"Unknown mode '{self.mode}', aborting execution.")
+            self.publish_status(f"FAILURE: Unknown mode '{self.mode}' in AIC Controller")
+            return "WAIT"
+
+    def _run_active_inference(self):  
         start_time = time.time()
 
         initial_particles = np.copy(self.current_particles)
@@ -259,9 +301,15 @@ class ActiveInferenceController:
         total_time = time.time() - start_time
         self.runtime_counter += 1
         self.convergence_parameter  = calculate_convergence(representative_poses_gmm, rep_weights_gmm)
-        if self.convergence_parameter < 0.20:
+        if self.convergence_parameter < self.convergence_threshold:
             self.get_logger().info("!!! CONVERGENCE REACHED !!!")
+            self.publish_status("SUCCESS: Convergence at threshold {:.2f}".format(self.convergence_threshold))
             return "WAIT"
+        if self.runtime_counter > self.max_runtime:
+            self.get_logger().info("!!! MAX RUNTIME REACHED !!!")
+            self.publish_status("FAILURE: Max runtime exceeded in AIC Controller")
+            return "WAIT"
+
 
         
         # Critical warning if the 'thought' took longer than the robot's step
@@ -347,3 +395,25 @@ class ActiveInferenceController:
         
         return total_risk * self.risk_penalty_factor
 
+    
+    ### TODO: Implement the actual logic for these modes if needed, or just return "WAIT" to do nothing.    
+    
+    def _run_random_walk(self):
+        # Simple random action selection (for testing)
+        action = np.random.choice(list(self.actions_dict.keys()))
+        self.get_logger().info(f"Random Walk chose action: {action}")
+        return action
+
+    def _run_passive_amcl(self):
+        # In passive mode, we might choose to do nothing (WAIT) and just update belief based on incoming data
+        return "WAIT"
+    
+    def _run_classical_amcl(self):
+        # Classical AMCL mode: Update belief but don't take action
+        return "WAIT"
+    
+    def _run_standard_dwa(self):
+        # If standard DWA is handled by another node (like Nav2), 
+        # this controller should probably do nothing (return None)
+        # so it doesn't fight for control of /cmd_vel.
+        return None

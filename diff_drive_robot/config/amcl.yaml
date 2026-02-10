@@ -2,9 +2,9 @@ amcl:
   ros__parameters:
     # Set these to 0, but we will override them with a global reset as soon as aic_launch.py starts
     use_map_topic: true
+    # Disable initial pose since we want global localization
     set_initial_pose: false
     always_reset_initial_pose: false
-    random_seed: 42
 
     initial_pose_x: 0.0
     initial_pose_y: 0.0
@@ -23,8 +23,8 @@ amcl:
     # Some versions of AMCL use this to force a rate
     save_pose_rate: 0.5
     # Increase particle count for global localization to cover the whole map
-    min_particles: 100
-    max_particles: 100
+    min_particles: 500
+    max_particles: 5000
     # This ensures it doesn't just stick to the initial pose if it's wrong
     # Use simulation time from /clock topic (important for Gazebo)
     # should be optimal for the world.sdf file and the diff_drive_robot
@@ -68,7 +68,7 @@ amcl:
     
     # Recovery (handling global localization, NOT kidnapped robot)
     recovery_alpha_fast: 0.1       # Fast exponential decay (0 = disabled)
-    recovery_alpha_slow: 0.001        # Slow exponential decay (0 = disabled)
+    recovery_alpha_slow: 0.001       # Slow exponential decay (0 = disabled)
     resample_interval: 2
     # Update configuration
     update_min_d: 0.05              # Min distance threshold for update (meters)

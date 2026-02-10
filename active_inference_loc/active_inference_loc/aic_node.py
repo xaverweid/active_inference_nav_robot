@@ -1,20 +1,26 @@
 import rclpy
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
-from nav_msgs.msg import OccupancyGrid
-from std_msgs.msg import Float32MultiArray
+from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
+from nav_msgs.msg import Odometry, OccupancyGrid
+from std_msgs.msg import Float32MultiArray, String
 from nav2_msgs.msg import ParticleCloud
 from threading import Timer
 from .core import ActiveInferenceController
-from .utils import ACTION_EFFECTS, ParticleClusturer, cloud_to_numpy
+from .utils import ACTION_EFFECTS, ParticleClusturer, cloud_to_numpy, is_pose_in_collision
 from std_srvs.srv import Empty
 from rclpy.time import Time
+
 
 class AICNode(Node):
     def __init__(self):
         super().__init__('aic_node')
-                
+
+        # Declare the parameter (with a default)
+        self.declare_parameter('algo_mode', 'active_inf')
+        self.algorithm_mode = self.get_parameter('algo_mode').get_parameter_value().string_value
+        self.get_logger().info(f"--- LAUNCHING AIC NODE IN MODE: {self.algorithm_mode} ---")
+
         self.time_delta = 1.0  # seconds
 
       # --- Replace the init_time lines with this ---
@@ -37,15 +43,26 @@ class AICNode(Node):
         self.latest_weights = None
         self.latest_particles_time = None
         self._stop_timer = None
+        
+        # Add pose tracking for Collision Check - /trial_status will be FAILURE if collision is detected
+        self.gt_pose = None
+        self.collision_detected = False
+        # self.gt_sub = self.create_subscription(
+        #     Odometry,
+        #     '/ground_truth/pose',
+        #     self.ground_truth_callback,
+        #     10
+        # )
        
         # 2. Initialize Brain & Tools
-        self.controller = ActiveInferenceController(logger=self.get_logger())
+        self.controller = ActiveInferenceController(logger=self.get_logger(), algo_mode=self.algorithm_mode)
         self.metrics_pub = self.create_publisher(Float32MultiArray, '/aic_metrics', 10)
         self.filtered_particle_pub = self.create_publisher(Float32MultiArray, '/belief/particles_filtered', 10)
+        self.status_pub = self.create_publisher(String, '/trial_status', 10)
         self.controller.set_metrics_publisher(self.metrics_pub)
         self.controller.set_particle_publisher(self.filtered_particle_pub)
+        self.controller.set_status_publisher(self.status_pub)
         self.clusturer = ParticleClusturer()
-
         
         # 3. ROS Infrastructure
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -86,18 +103,33 @@ class AICNode(Node):
         self.ready_to_think = True
         self.waiting_for_update = False
 
+    # def ground_truth_callback(self, msg):
+    #     self.gt_pose = msg.pose.pose.position
+    
     def map_callback(self, msg):
         # self.get_logger().info("Received Map. Processing...")
         try:
             self.controller.set_map(msg)
             self.map_ready = True
-            self.get_logger().info("Map registered successfully.")
+            self.get_logger().info("Map registered successfully in Controller.")
             # We keep the subscription alive for a moment to ensure stability, 
             # or destroy it if you are sure the map won't change.
             self.destroy_subscription(self.map_sub)
         except Exception as e:
             self.get_logger().error(f"Failed to set map: {e}")
 
+    # def check_collision(self):
+    #     if self.current_pose is None or self.map_metadata is None:
+    #         return False
+        
+    #     pose = [self.current_pose.x, self.current_pose.y]
+    #     in_collision = is_pose_in_collision(pose, self.map_metadata)
+        
+    #     if in_collision:
+    #         self.get_logger().error(f"🚨 COLLISION DETECTED at ({pose[0]:.2f}, {pose[1]:.2f})")
+    #         return True
+    #     return False
+    
     def particle_callback(self, msg: ParticleCloud):
         self.last_particles_time = Time.from_msg(msg.header.stamp)
 
@@ -187,7 +219,8 @@ class AICNode(Node):
         
             if best_action_name:
                 self.get_logger().info(f"Selected Action: {best_action_name}")
-                #self.apply_action(best_action_name)
+                self.apply_action(best_action_name)
+            else: self.get_logger().error("Error: No action selected by the controller.")
         except Exception as e:
             self.get_logger().error(f"Error in Active Inference Node control loop: {e}")
 

@@ -37,10 +37,9 @@ def generate_launch_description():
         'enable_viz', default_value='true',
         description='Show the Matplotlib Belief Monitor'
     )
+
+    algo_mode_config = LaunchConfiguration('algo_mode')
     
-    # Active Inference Control node 
-    # This node subscribes to particle cloud, odometry, and scan
-    # and publishes control commands to /cmd_vel
     aic_control_node = Node(
         package='active_inference_loc',
         executable='aic_node',
@@ -48,6 +47,7 @@ def generate_launch_description():
         output='screen',
         parameters=[
             {'use_sim_time': LaunchConfiguration('use_sim_time')},
+            {'algo_mode': algo_mode_config},
         ],
         condition=IfCondition(LaunchConfiguration('enable_aic')),
     )

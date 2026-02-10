@@ -235,25 +235,26 @@ def is_pose_in_collision(pose, map_metadata, threshold=50, robot_radius=0.18):
     x, y = pose[0], pose[1]
     res = map_metadata['resolution']
     ox, oy = map_metadata['origin_x'], map_metadata['origin_y']
-    data = map_metadata['data'] # Assumes this is the 2D array from core.py
+    data = map_metadata['data']
     
-    # Check a small box around the robot based on radius
     steps = int(robot_radius / res)
     grid_x = int((x - ox) / res)
     grid_y = int((y - oy) / res)
-
+    
     for dx in range(-steps, steps + 1):
         for dy in range(-steps, steps + 1):
             curr_x = grid_x + dx
             curr_y = grid_y + dy
             
-            if 0 <= curr_x < map_metadata['width'] and 0 <= curr_y < map_metadata['height']:
-                # Indexing data[y, x] for 2D array
-                if data[curr_y, curr_x] >= threshold or data[curr_y, curr_x] == -1:
-                    return True
-            else:
-                return True # Out of bounds
-    return False
+            # Check bounds
+            if not (0 <= curr_x < map_metadata['width'] and 0 <= curr_y < map_metadata['height']):
+                return True  # Out of bounds = collision
+            
+            # Check obstacle
+            if data[curr_y, curr_x] >= threshold or data[curr_y, curr_x] == -1:
+                return True
+    
+    return False  # No collision detected
 
 def calculate_shannon_entropy(weights):
     """
