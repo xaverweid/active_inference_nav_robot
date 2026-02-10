@@ -6,6 +6,8 @@ from nav2_msgs.msg import Particle, ParticleCloud
 from geometry_msgs.msg import Pose, Quaternion
 import time
 
+
+# does not work like this, amcl doesnt subscribe to particle cloud
 class SeededParticleInitializer(Node):
     def __init__(self):
         super().__init__('seeded_particle_initializer')

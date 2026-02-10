@@ -14,7 +14,12 @@ def generate_launch_description():
     This launch file is the Brain of the AI node.
     """
     pkg_dir = get_package_share_directory('active_inference_loc') 
-        
+    
+    algo_mode_arg = DeclareLaunchArgument(
+        'algo_mode',
+        default_value='active_inf',
+        description='Algorithm mode for the AIC node (e.g., active_inf, passive_amcl, random_walk, classical_amcl, standard_dwa)'
+    ) 
     # Launch arguments
     use_sim_time_arg = DeclareLaunchArgument(
         'use_sim_time',
