@@ -1,0 +1,36 @@
+diff --git a/nav2_amcl/src/amcl_node.cpp b/nav2_amcl/src/amcl_node.cpp
+index 9775a769..3ad21a2c 100644
+--- a/nav2_amcl/src/amcl_node.cpp
++++ b/nav2_amcl/src/amcl_node.cpp
+@@ -241,6 +241,11 @@ AmclNode::~AmclNode()
+ nav2_util::CallbackReturn
+ AmclNode::on_configure(const rclcpp_lifecycle::State & /*state*/)
+ {
++  // Resets the random number generator to a fixed sequence (Scientific Control) - Initial Configuration
++  srand48(42);
++  RCLCPP_INFO(get_logger(), "Initialization: Random seed set to 42 for reproducible initialization");
++  // -----------------------------
++
+   RCLCPP_INFO(get_logger(), "Configuring");
+   callback_group_ = create_callback_group(
+     rclcpp::CallbackGroupType::MutuallyExclusive, false);
+@@ -490,6 +495,11 @@ AmclNode::globalLocalizationCallback(
+   const std::shared_ptr<std_srvs::srv::Empty::Request>/*req*/,
+   std::shared_ptr<std_srvs::srv::Empty::Response>/*res*/)
+ {
++  // Resets the random number generator to a fixed sequence (Scientific Control) - Global Localization
++  srand48(42);
++  RCLCPP_INFO(get_logger(), "Global Localization: Random seed set to 42 for reproducible initialization");
++  // -----------------------------
++
+   std::lock_guard<std::recursive_mutex> cfl(mutex_);
+ 
+   RCLCPP_INFO(get_logger(), "Initializing with uniform distribution");
+@@ -497,6 +507,7 @@ AmclNode::globalLocalizationCallback(
+   pf_init_model(
+     pf_, (pf_init_model_fn_t)AmclNode::uniformPoseGenerator,
+     reinterpret_cast<void *>(map_));
++
+   RCLCPP_INFO(get_logger(), "Global initialisation done!");
+   initial_pose_is_known_ = true;
+   pf_init_ = false;
