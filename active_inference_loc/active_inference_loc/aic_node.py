@@ -18,7 +18,7 @@ class AICNode(Node):
         self.time_delta = 1.0  # seconds
 
       # --- Replace the init_time lines with this ---
-        self.recording_delay = 10.0  # Seconds to wait
+        self.recording_delay = 0.0  # Seconds to wait
         self.ticks_to_wait = int(self.recording_delay / self.time_delta)
         self.ticks_passed = 0
 
@@ -43,7 +43,7 @@ class AICNode(Node):
         self.metrics_pub = self.create_publisher(Float32MultiArray, '/aic_metrics', 10)
         self.filtered_particle_pub = self.create_publisher(Float32MultiArray, '/belief/particles_filtered', 10)
         self.controller.set_metrics_publisher(self.metrics_pub)
-        self.controller.set_particle_pusblisher(self.filtered_particle_pub)
+        self.controller.set_particle_publisher(self.filtered_particle_pub)
         self.clusturer = ParticleClusturer()
 
         
@@ -187,7 +187,7 @@ class AICNode(Node):
         
             if best_action_name:
                 self.get_logger().info(f"Selected Action: {best_action_name}")
-                self.apply_action(best_action_name)
+                #self.apply_action(best_action_name)
         except Exception as e:
             self.get_logger().error(f"Error in Active Inference Node control loop: {e}")
 

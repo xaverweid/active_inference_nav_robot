@@ -23,8 +23,8 @@ amcl:
     # Some versions of AMCL use this to force a rate
     save_pose_rate: 0.5
     # Increase particle count for global localization to cover the whole map
-    min_particles: 500
-    max_particles: 5000
+    min_particles: 100
+    max_particles: 100
     # This ensures it doesn't just stick to the initial pose if it's wrong
     # Use simulation time from /clock topic (important for Gazebo)
     # should be optimal for the world.sdf file and the diff_drive_robot

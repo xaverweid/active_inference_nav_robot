@@ -30,7 +30,7 @@ class ActiveInferenceController:
         # --- TUNABLE PARAMETERS (The "Personality" of your Robot) ---
         # 1. Epistemic Weight (gamma): Curiosity. 
         # Higher = Robot explores more to reduce uncertainty.
-        self.alpha_epistemic = 500.0 
+        self.alpha_epistemic = 700.0 
 
         # 2. Pragmatic Weight (beta): Importance of following the "Goal/Safety".
         # Higher = Robot prioritizes safety/risk avoidanc.
@@ -41,7 +41,7 @@ class ActiveInferenceController:
         # This scales the pragmatic value before it is weighted by beta.
         self.risk_penalty_factor = 5.0
     
-    def set_particle_pusblisher(self, pub):
+    def set_particle_publisher(self, pub):
         self.particle_data_pub = pub
     
     def get_logger(self):
