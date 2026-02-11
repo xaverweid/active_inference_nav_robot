@@ -11,16 +11,20 @@ def generate_launch_description():
     """
     Launch file for Active Inference Control with AMCL particle_cloud as input.
     
-    This launch file is the Brain of the AI node.
+    Responsibilities:
+    - Launch AIC node (decision-making)
+    - Launch belief monitor (visualization)
+    - Ensure subscribers are online
+    - THEN trigger /reinitialize_global_localization to publish particle cloud
     """
     pkg_dir = get_package_share_directory('active_inference_loc') 
     
     algo_mode_arg = DeclareLaunchArgument(
         'algo_mode',
         default_value='active_inf',
-        description='Algorithm mode for the AIC node (e.g., active_inf, passive_amcl, random_walk, classical_amcl, standard_dwa)'
-    ) 
-    # Launch arguments
+        description='Algorithm mode: active_inf, passive_amcl, random_walk, classical_amcl, standard_dwa'
+    )
+    
     use_sim_time_arg = DeclareLaunchArgument(
         'use_sim_time',
         default_value='true',
@@ -34,12 +38,14 @@ def generate_launch_description():
     )
 
     enable_viz_arg = DeclareLaunchArgument(
-        'enable_viz', default_value='true',
+        'enable_viz', 
+        default_value='true',
         description='Show the Matplotlib Belief Monitor'
     )
 
     algo_mode_config = LaunchConfiguration('algo_mode')
     
+    # AIC Control Node
     aic_control_node = Node(
         package='active_inference_loc',
         executable='aic_node',
@@ -52,46 +58,49 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('enable_aic')),
     )
 
-    # Service call to initialize global localization (and output first particlecloud) when aic is enabled after a short delay
-    init_global_localization = TimerAction(
-    period=2.0,  # Short delay so AIC node is fully up
-    actions=[
-        ExecuteProcess(
-            cmd=[
-                'ros2', 'service', 'call',
-                '/reinitialize_global_localization',
-                'std_srvs/srv/Empty',
-                '{}'
-            ],
-            output='screen'
-        )
-    ]
-    )
-
-    # For Reproducibilty, we disable the automatic global localization call and create own particles/seed
-    seeded_particle_init = Node(
-        package='active_inference_loc',
-        executable='seeded_particle_initializer',
-        name='seeded_particle_initializer',
-        output='screen'
-    )
-
+    # Belief Monitor (Visualization)
     viz_node = Node(
         package='active_inference_loc',
         executable='belief_monitor',
         name='belief_monitor',
+        output='screen',
         condition=IfCondition(LaunchConfiguration('enable_viz'))
+    )
+
+    # **FIXED: Wait for AIC and Belief Monitor subscribers to be online, THEN trigger global localization**
+    init_global_localization = TimerAction(
+        period=2.0,  # Give nodes time to start and subscribe
+        actions=[
+            ExecuteProcess(
+                cmd=[
+                    'ros2', 'service', 'call',
+                    '/reinitialize_global_localization',
+                    'std_srvs/srv/Empty',
+                    '{}'
+                ],
+                output='screen'
+            )
+        ]
+    )
+
+    startup_msg = ExecuteProcess(
+        cmd=[
+            'ros2', 'topic', 'echo',
+            '/aic_metrics', '--once'
+        ],
+        output='screen'
     )
     
     return LaunchDescription([
+        algo_mode_arg,
         use_sim_time_arg,
         enable_aic_arg,
         enable_viz_arg,
+        
+        # Start nodes first
         aic_control_node,
-        init_global_localization,
         viz_node,
-        # TimerAction(
-        #     period=5.0,
-        #     actions=[seeded_particle_init]
-        # )
+        
+        # **THEN trigger particle cloud publication when subscribers are ready**
+        init_global_localization
     ])
