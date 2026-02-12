@@ -108,8 +108,6 @@ class BeliefMonitorNode(Node):
     def update_plot(self):
         with self.lock:
             if self.current_metrics is None or self.latest_cloud_data is None or self.latest_weights is None:
-                self.get_logger().info("Waiting for both metrics and particle data...")
-                self.get_logger().info(f"Metrics: {self.current_metrics}, Cloud Data: {self.latest_cloud_data is not None}, Weights: {self.latest_weights is not None}")
                 return
             
             raw_points = self.latest_cloud_data.copy()

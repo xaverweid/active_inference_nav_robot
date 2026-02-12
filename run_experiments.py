@@ -13,6 +13,8 @@ import subprocess, signal, os, time, csv, numpy as np
 
 class ExperimentLogger(Node):
     """Subscribes to ROS topics and logs experiment data to CSV."""
+
+    # TODO: We could also add parameter conditions (planning_sigma, alpha_epistemic, n_clusters) to the CSV for better analysis later on.
     
     def __init__(self, trial_name):
         super().__init__('exp_logger')

@@ -177,6 +177,7 @@ def get_covariance_ellipse(cluster_points, n_std=2.0):
     vals, vecs = vals[order], vecs[:, order]
     
     theta = np.degrees(np.arctan2(*vecs[:, 0][::-1]))
+    vals = np.maximum(vals, 1e-6) # Avoid degenerate cases
     width, height = 2 * n_std * np.sqrt(vals)
     
     return width, height, theta

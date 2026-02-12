@@ -14,11 +14,6 @@ amcl:
     initial_cov_xx: 10.0
     initial_cov_yy: 10.0
     initial_cov_aa: 3.14
-
-
-    # Update every 2/3 of a small move (currently FORWARD_SMALL': {'linear': 0.15, 'angular': 0.0}) (see utils.py for Action Commands)) and 1/2 of rotation
-    update_min_d: 0.10
-    update_min_a: 0.15
     
     # Some versions of AMCL use this to force a rate
     save_pose_rate: 0.5
@@ -48,11 +43,11 @@ amcl:
     alpha5: 0.0
     
     # Measurement model (laser beam likelihoods)
-    z_hit: 0.93                   # Weight of hit measurement
-    z_short: 0.01                  # Weight of short measurement
+    z_hit: 0.5                     # Weight of hit measurement
+    z_short: 0.01                   # Weight of short measurement
     z_max: 0.01                     # Weight of max range measurement
-    z_random: 0.05                   # Weight of random measurement
-    sigma_hit: 0.1                  # Std dev of hit measurement
+    z_random: 0.2                   # Weight of random measurement. Random noise floor. The higher , the more particles survive
+    sigma_hit: 0.2                  # Std dev of hit measurement. The higher, the more survival of particles in resampling
     lambda_short: 0.1               # Exponential decay for short measurements
     
     # Beam configuration
@@ -69,11 +64,11 @@ amcl:
     # Recovery (handling global localization, NOT kidnapped robot)
     recovery_alpha_fast: 0.1       # Fast exponential decay (0 = disabled)
     recovery_alpha_slow: 0.001       # Slow exponential decay (0 = disabled)
-    resample_interval: 2
+
     # Update configuration
-    update_min_d: 0.05              # Min distance threshold for update (meters)
-    update_min_a: 0.05              # Min angle threshold for update (radians)
-    resample_interval: 1            # Resample particles every N updates
+    update_min_d: 0.15
+    update_min_a: 0.3
+    resample_interval: 2          # Resample particles every N updates
     tf_broadcast: true              # Broadcast map->odom transform
     transform_tolerance: 1.0        # Transform tolerance in seconds
     

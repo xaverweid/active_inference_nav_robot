@@ -31,13 +31,14 @@ class ActiveInferenceController:
         self.runtime_counter = 0
         self.max_runtime = 300
         self.convergence_parameter = 100
-        self.lidar_sigma = 0.15
+        self.planning_sigma = 0.7   # A value between 0.5 and 1.0 is usually 'reasonable' for planning.
+
         self.wait_streak = 0
         self.clock = None
         self.convergence_threshold = 0.20
 
         # --- TUNABLE PARAMETERS ---
-        self.alpha_epistemic = 700.0 
+        self.alpha_epistemic = 1000.0 
         self.beta_pragmatic = 200.0 
         self.risk_penalty_factor = 5.0
         
@@ -194,13 +195,12 @@ class ActiveInferenceController:
         sample_particles = self.current_particles[sample_indices]
         sample_weights = self.current_weights[sample_indices]
         sample_weights = np.ones(sample_size) / sample_size
-         
+        
         representative_poses_gmm, rep_weights_gmm = self.clusturer.get_representative_clusters_from_gmm(
             initial_particles, initial_weights
         )
-        
-        self.shannon_entropy = calculate_shannon_entropy(rep_weights_gmm)
-        self.get_logger().info(f"Thinking... (Clustered {len(initial_particles)} particles into {len(representative_poses_gmm)} hypotheses)")
+     
+        self.shannon_entropy = calculate_shannon_entropy(self.current_weights)
 
         efe_scores = {}
         details = {} 
@@ -215,6 +215,7 @@ class ActiveInferenceController:
             
             pred_clusters = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration) for p in initial_poses_gmm])
             raw_epistemic = self.calculate_efe_epistemic(pred_clusters, initial_weights_gmm)
+            self.get_logger().info(f"Action: {action} | Raw Epistemic (Entropy): {raw_epistemic:.2f}")
 
             pred_particles = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration) for p in initial_poses_pragmatic])
             raw_pragmatic = self.calculate_efe_pragmatic(pred_particles, initial_weights_pragmatic)
@@ -222,7 +223,8 @@ class ActiveInferenceController:
             total_efe = (self.alpha_epistemic * raw_epistemic) + (self.beta_pragmatic * raw_pragmatic)
             efe_scores[action] = total_efe
             details[action] = {'epistemic': self.alpha_epistemic * raw_epistemic, 'pragmatic': self.beta_pragmatic * raw_pragmatic}
-
+            self.get_logger().debug(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {raw_epistemic:.2f}, Pragmatic: {raw_pragmatic:.2f})")
+        
         best_action = min(efe_scores, key=efe_scores.get)
 
         if best_action == "WAIT":
@@ -282,19 +284,37 @@ class ActiveInferenceController:
     def calculate_efe_epistemic(self, predicted_poses, rep_weights):
         """Calculate expected free energy for epistemic (information gain) value."""
         pred_scans = raycast_scan(predicted_poses, self.map_2d, self.map_metadata)
+
+        # Sanity checks / normalization
+        rep_weights = np.asarray(rep_weights, dtype=np.float64)
+        if rep_weights.ndim != 1:
+            raise ValueError("rep_weights must be a 1D array")
         if pred_scans.shape[0] != len(rep_weights):
             raise ValueError("Number of predicted scans must match number of weights.")
-        
+
+        # Ensure numeric types
+        pred_scans = np.asarray(pred_scans, dtype=np.float64)
+
+        # Pairwise squared differences between scan vectors
         diffs = pred_scans[:, np.newaxis, :] - pred_scans[np.newaxis, :, :]
         sq_diffs = np.sum(diffs**2, axis=2)
-        ll_matrix = -0.5 * sq_diffs / (self.lidar_sigma**2)
 
+        # Log-likelihood (up to a constant) under isotropic Gaussian sensor model
+        num_beams = pred_scans.shape[1]
+        mse = sq_diffs / num_beams
+        ll_matrix = -0.5 * mse / (self.planning_sigma**2)
+
+        # Stabilize weights and compute posterior mixture responsibilities
         log_rep_weights = np.log(rep_weights + 1e-12)
         log_w_matrix = ll_matrix + log_rep_weights[np.newaxis, :]
+        # LogSumExp for numerical stability
         log_z = scipy.special.logsumexp(log_w_matrix, axis=1, keepdims=True)
+        # Exponentiate to get probabilities P(z|x)
         w_matrix = np.exp(log_w_matrix - log_z)
 
-        entropies = -np.sum(w_matrix * np.log(w_matrix + 1e-12), axis=1)
+        # Numerically-stable entropy: clip tiny values to avoid negative zeros
+        w_clipped = np.clip(w_matrix, 1e-12, 1.0)
+        entropies = -np.sum(w_clipped * np.log(w_clipped), axis=1)
         expected_entropy = np.sum(rep_weights * entropies)
 
         return float(expected_entropy)

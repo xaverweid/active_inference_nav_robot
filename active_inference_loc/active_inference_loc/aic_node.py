@@ -10,6 +10,7 @@ from .core import ActiveInferenceController
 from .utils import ACTION_EFFECTS, cloud_to_numpy
 from std_srvs.srv import Empty
 from rclpy.time import Time
+import numpy as np
 
 
 class AICNode(Node):
