@@ -72,7 +72,7 @@ class ExperimentLogger(Node):
                 self.gt_pose.y, 
                 self.amcl_pose.x, 
                 self.amcl_pose.y, 
-                error,
+                self.metrics[7],  # position error from AIC metrics
                 self.metrics[6],  # convergence
                 self.metrics[0],  # epistemic
                 self.metrics[1],  # pragmatic
@@ -147,7 +147,7 @@ def run_benchmarking():
             print(f"[3/3] Launching AIC node in mode: {algo}")
             ctrl_proc = subprocess.Popen([
                 "ros2", "launch", "active_inference_loc", "aic_launch.py",
-                f"algo_mode:={algo}"
+                f"algo_mode:={algo}", f"spawn_x:={p['x']}", f"spawn_y:={p['y']}", f"spawn_yaw:={p['yaw']}"
             ], preexec_fn=os.setsid)
             
             # Run trial with timeout

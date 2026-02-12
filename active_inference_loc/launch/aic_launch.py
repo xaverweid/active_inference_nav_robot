@@ -24,6 +24,10 @@ def generate_launch_description():
         default_value='active_inf',
         description='Algorithm mode: active_inf, passive_amcl, random_walk, classical_amcl, standard_dwa'
     )
+
+    spawn_x_arg = DeclareLaunchArgument('spawn_x', default_value='0.0', description='Initial X position') 
+    spawn_y_arg = DeclareLaunchArgument('spawn_y', default_value='0.0', description='Initial Y position') 
+    spawn_yaw_arg = DeclareLaunchArgument('spawn_yaw', default_value='0.0', description='Initial Yaw angle')
     
     use_sim_time_arg = DeclareLaunchArgument(
         'use_sim_time',
@@ -42,8 +46,6 @@ def generate_launch_description():
         default_value='true',
         description='Show the Matplotlib Belief Monitor'
     )
-
-    algo_mode_config = LaunchConfiguration('algo_mode')
     
     # AIC Control Node
     aic_control_node = Node(
@@ -53,9 +55,11 @@ def generate_launch_description():
         output='screen',
         parameters=[
             {'use_sim_time': LaunchConfiguration('use_sim_time')},
-            {'algo_mode': algo_mode_config},
-        ],
-        condition=IfCondition(LaunchConfiguration('enable_aic')),
+            {'algo_mode': LaunchConfiguration('algo_mode')},
+            {'spawn_x': LaunchConfiguration('spawn_x')}, 
+            {'spawn_y': LaunchConfiguration('spawn_y')}, 
+            {'spawn_yaw': LaunchConfiguration('spawn_yaw')} 
+        ], condition=IfCondition(LaunchConfiguration('enable_aic'))
     )
 
     # Belief Monitor (Visualization)
@@ -93,6 +97,7 @@ def generate_launch_description():
     
     return LaunchDescription([
         algo_mode_arg,
+        spawn_x_arg, spawn_y_arg, spawn_yaw_arg,
         use_sim_time_arg,
         enable_aic_arg,
         enable_viz_arg,

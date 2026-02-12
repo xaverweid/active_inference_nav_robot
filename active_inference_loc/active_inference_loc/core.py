@@ -14,7 +14,7 @@ class ActiveInferenceController:
     Handles decision logic for all control modes.
     """
     
-    def __init__(self, logger, algo_mode='active_inf'):
+    def __init__(self, logger, algo_mode='active_inf', spawn_pose=np.array([0.0, 0.0, 0.0])):
         self.logger = logger
         self.algo_mode = algo_mode
         self.metrics_pub = None
@@ -44,11 +44,12 @@ class ActiveInferenceController:
         
         # --- GROUND TRUTH FOR LOGGING (set by AICNode) ---
         # These are strictly for logging/analysis, NOT for decision-making
-        self.true_position = None  # [x, y] from ground truth
-        self.estimated_position = None  # [x, y] from AMCL belief (mean of particles)
+        self.true_position = None           # [x, y] from ground truth (for reference only)
+        self.spawn_pose = spawn_pose        # [x, y, yaw] initial spawn position
+        self.estimated_position = None
+        self.position_error = None  # Now: distance from spawn to AMCL estimate
         
         # --- METRICS FOR EXPERIMENT LOGGING ---
-        self.position_error = None  # Distance between true and estimated
         self.last_action = None
         self.last_raw_epistemic = None
         self.last_raw_pragmatic = None
@@ -139,12 +140,14 @@ class ActiveInferenceController:
         self.current_weights = weights
         self.time_delta = dt
         
-        # **NEW: Compute estimated position (weighted mean)**
+        # **Compute estimated position (weighted mean)**
         self.estimated_position = np.average(points[:, :2], axis=0, weights=weights)
         
-        # **NEW: Compute position error if ground truth is available**
-        if self.true_position is not None:
-            self.position_error = np.linalg.norm(self.estimated_position - self.true_position)
+        # **Compute position error: distance from actual real position to AMCL estimate**
+        # Actual real position = spawn_pose + true_position (offset from spawn)
+        if self.spawn_pose is not None and self.true_position is not None:
+            actual_real_position = self.spawn_pose + self.true_position
+            self.position_error = np.linalg.norm(self.estimated_position - actual_real_position)
 
         if self.particle_data_pub is not None:
             self._publish_filtered_data()
@@ -215,7 +218,6 @@ class ActiveInferenceController:
             
             pred_clusters = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration) for p in initial_poses_gmm])
             raw_epistemic = self.calculate_efe_epistemic(pred_clusters, initial_weights_gmm)
-            self.get_logger().info(f"Action: {action} | Raw Epistemic (Entropy): {raw_epistemic:.2f}")
 
             pred_particles = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration) for p in initial_poses_pragmatic])
             raw_pragmatic = self.calculate_efe_pragmatic(pred_particles, initial_weights_pragmatic)
@@ -223,7 +225,7 @@ class ActiveInferenceController:
             total_efe = (self.alpha_epistemic * raw_epistemic) + (self.beta_pragmatic * raw_pragmatic)
             efe_scores[action] = total_efe
             details[action] = {'epistemic': self.alpha_epistemic * raw_epistemic, 'pragmatic': self.beta_pragmatic * raw_pragmatic}
-            self.get_logger().debug(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {raw_epistemic:.2f}, Pragmatic: {raw_pragmatic:.2f})")
+            self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {raw_epistemic:.2f}, Pragmatic: {raw_pragmatic:.2f})")
         
         best_action = min(efe_scores, key=efe_scores.get)
 
@@ -232,7 +234,7 @@ class ActiveInferenceController:
             if self.wait_streak > 2:
                 sorted_actions = sorted(efe_scores, key=efe_scores.get)
                 best_action = sorted_actions[1]
-                self.get_logger().info("WAIT chosen >2 times. Using second-best action.")
+                self.get_logger().info("WAIT chosen > 2 times. Using second-best action.")
         else:
             self.wait_streak = 0
 
@@ -329,7 +331,9 @@ class ActiveInferenceController:
         return total_risk * self.risk_penalty_factor
 
     #TODO: Implement DWA and classical AMCL decision logic if needed. For now, they just return "WAIT" to let external nodes handle them.
-    
+    # Make sure to also implement the same requirements as in aic. 
+    # f.e.: after 3 WAITs, select the second-best action to avoid getting stuck in local minima.
+    # 
     def _run_random_walk(self):
         """Random action selection."""
         action = np.random.choice(list(self.actions_dict.keys()))

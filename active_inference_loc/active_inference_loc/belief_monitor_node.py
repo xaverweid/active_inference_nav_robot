@@ -199,6 +199,7 @@ class BeliefMonitorNode(Node):
                 f"Total Expected G:   {metrics[2]:.2f}\n"
                 f"-------------------------------\n"
                 f"Runtime:            {int(metrics[5]):.2f}\n"
+                f"Position Error:     {metrics[7] if len(metrics) > 7 else 'N/A'}\n "
             )
             self.dashboard.set_text(table_text)
 

@@ -26,9 +26,19 @@ class AICNode(Node):
     def __init__(self):
         super().__init__('aic_node')
 
+        # Get parameters from via aic_launch.py
         self.declare_parameter('algo_mode', 'active_inf')
         self.algorithm_mode = self.get_parameter('algo_mode').get_parameter_value().string_value
-        self.get_logger().info(f"--- LAUNCHING AIC NODE IN MODE: {self.algorithm_mode} ---")
+        self.get_logger().info(f"--- LAUNCHING AIC NODE IN MODE: {self.algorithm_mode}")
+
+        # Get spawn pose parameters from robot_launch.py
+        self.declare_parameter('spawn_x', 0.0)  # Default, but will be overridden by launch
+        self.declare_parameter('spawn_y', 0.0)   # Default, but will be overridden by launch
+        self.declare_parameter('spawn_yaw', 0.0)  # Default, but will be overridden by launch 
+        self.spawn_x = self.get_parameter('spawn_x').get_parameter_value().double_value
+        self.spawn_y = self.get_parameter('spawn_y').get_parameter_value().double_value
+        self.spawn_yaw = self.get_parameter('spawn_yaw').get_parameter_value().double_value
+        self.get_logger().info(f"Spawn pose: ({self.spawn_x:.2f}, {self.spawn_y:.2f}, {self.spawn_yaw:.2f})")
 
         self.time_delta = 1.0
         self.recording_delay = 0.0
@@ -46,11 +56,10 @@ class AICNode(Node):
         self.last_particles_time = None
         self._stop_timer = None
 
-        # Ground Truth (for logging only!)
-        self.ground_truth_pose = None
-        
         # Initialize Brain
-        self.controller = ActiveInferenceController(logger=self.get_logger(), algo_mode=self.algorithm_mode)
+        self.controller = ActiveInferenceController(logger=self.get_logger(), 
+            algo_mode=self.algorithm_mode, 
+            spawn_pose=np.array([self.spawn_x, self.spawn_y, self.spawn_yaw]))
         
         # Publishers
         self.metrics_pub = self.create_publisher(Float32MultiArray, '/aic_metrics', 10)
@@ -61,6 +70,9 @@ class AICNode(Node):
         self.controller.set_metrics_publisher(self.metrics_pub)
         self.controller.set_particle_publisher(self.filtered_particle_pub)
         self.controller.set_status_publisher(self.status_pub)
+        
+        # Positional tracking
+        self.ground_truth_pose = None
         
         # Subscribers
         map_qos = QoSProfile(
