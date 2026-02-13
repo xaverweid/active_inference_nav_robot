@@ -72,6 +72,14 @@ def generate_launch_description():
         output='screen'
     )
 
+    # Publish starting pose so other nodes can subscribe to it
+    starting_pose_publisher = Node(
+        package='diff_drive_robot',
+        executable='starting_pose_publisher.py',
+        arguments=[x_pose, y_pose, yaw_pose],
+        output='screen'
+    )
+
     # Launch the Gazebo-ROS bridge
     bridge_params = os.path.join(pkg_dir,'config','gz_bridge.yaml')
     ros_gz_bridge = Node(
@@ -150,6 +158,7 @@ def generate_launch_description():
         gazebo_client,
         ros_gz_bridge,
         spawn_diff_bot,
+        starting_pose_publisher,
         start_map_server,
         start_amcl,
         start_lifecycle_manager,

@@ -22,12 +22,9 @@ class ExperimentLogger(Node):
         self.csv_file = open(f"{trial_name}.csv", mode='w')
         self.writer = csv.writer(self.csv_file)
         # Header includes position error (from metrics[7])
-        self.writer.writerow(['step', 'gt_x', 'gt_y', 'amcl_x', 'amcl_y', 'error', 'convergence', 'epistemic', 'pragmatic', 'cum_dist'])
+        self.writer.writerow(['step', 'position_error', 'yaw_error', 'convergence', 'epistemic', 'pragmatic'])
 
         # State
-        self.gt_pose = None
-        self.amcl_pose = None
-        self.last_gt_pose = None
         self.cumulative_distance = 0.0
         self.metrics = None
         self.current_step = 0
@@ -35,24 +32,13 @@ class ExperimentLogger(Node):
         self.status = "PENDING"
 
         # Subscribers
-        self.create_subscription(Odometry, '/ground_truth/pose', self.gt_callback, 10)
-        self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.amcl_callback, 10)
         self.create_subscription(String, '/trial_status', self.status_callback, 10)
         self.create_subscription(Float32MultiArray, '/aic_metrics', self.metrics_callback, 10)
 
-    def gt_callback(self, msg):
-        self.gt_pose = msg.pose.pose.position
-        if self.last_gt_pose:
-            d = np.sqrt((self.gt_pose.x - self.last_gt_pose.x)**2 + (self.gt_pose.y - self.last_gt_pose.y)**2)
-            self.cumulative_distance += d
-        self.last_gt_pose = self.gt_pose
-
-    def amcl_callback(self, msg):
-        self.amcl_pose = msg.pose.pose.position
-
     def metrics_callback(self, msg):
         """
-        msg.data: [epistemic, pragmatic, total_efe, alpha, beta, runtime, convergence, position_error]
+        msg.data: [epistemic, pragmatic, total_efe, alpha, beta, runtime, convergence, position_error, yaw_error]
+        TODO: Check with core.py publish_metrics() for exact order and content.
         """
         self.metrics = msg.data
         self.log_step()
@@ -63,20 +49,14 @@ class ExperimentLogger(Node):
             self.finished = True
 
     def log_step(self):
-        if self.gt_pose and self.amcl_pose and self.metrics:
-            error = np.sqrt((self.gt_pose.x - self.amcl_pose.x)**2 + (self.gt_pose.y - self.amcl_pose.y)**2)
-            
+        if self.metrics:
             self.writer.writerow([
                 self.current_step, 
-                self.gt_pose.x, 
-                self.gt_pose.y, 
-                self.amcl_pose.x, 
-                self.amcl_pose.y, 
-                self.metrics[7],  # position error from AIC metrics
-                self.metrics[6],  # convergence
-                self.metrics[0],  # epistemic
-                self.metrics[1],  # pragmatic
-                self.cumulative_distance
+                self.metrics[7] if len(self.metrics) > 7 else -1.0,  # position error from AIC metrics
+                self.metrics[8] if len(self.metrics) > 8 else -1.0,  # yaw error from AIC metrics
+                self.metrics[6] if len(self.metrics) > 6 else -1.0,  # convergence
+                self.metrics[0] if len(self.metrics) > 0 else -1.0,  # epistemic
+                self.metrics[1] if len(self.metrics) > 1 else -1.0,  # pragmatic
             ])
             self.current_step += 1
             self.csv_file.flush()
@@ -121,7 +101,7 @@ def run_benchmarking():
     
     summary_f = open('summary_results.csv', mode='w')
     summary_writer = csv.writer(summary_f)
-    summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'final_error', 'cumulative_distance'])
+    summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta'])
     
     for algo in algos:
         for i, p in enumerate(poses):
@@ -162,17 +142,16 @@ def run_benchmarking():
                     break
 
             # Calculate final metrics
-            final_error = -1.0
-            if logger.gt_pose and logger.amcl_pose:
-                final_error = np.sqrt((logger.gt_pose.x - logger.amcl_pose.x)**2 + (logger.gt_pose.y - logger.amcl_pose.y)**2)
-                
-            summary_writer.writerow([algo, i, logger.status, logger.current_step, final_error, logger.cumulative_distance])
+               
+            summary_writer.writerow([algo, i, logger.status, logger.current_step, 
+                                     logger.metrics[3] if logger.metrics and len(logger.metrics) > 3 else -1.0,  # alpha
+                                     logger.metrics[4] if logger.metrics and len(logger.metrics) > 4 else -1.0])  # beta
             summary_f.flush()
 
             logger.csv_file.close()
             cleanup_processes(sim_proc, ctrl_proc)
             
-            print(f"✓ Finished {trial_id}: {logger.status} (steps={logger.current_step}, error={final_error:.3f}m)")
+            print(f"✓ Finished {trial_id}: {logger.status} (steps={logger.current_step})")
             print(f"  CSV saved: {trial_id}.csv")
 
     summary_f.close()

@@ -1,7 +1,7 @@
 import rclpy
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, Point
 from nav_msgs.msg import Odometry, OccupancyGrid
 from std_msgs.msg import Float32MultiArray, String
 from nav2_msgs.msg import ParticleCloud
@@ -31,15 +31,6 @@ class AICNode(Node):
         self.algorithm_mode = self.get_parameter('algo_mode').get_parameter_value().string_value
         self.get_logger().info(f"--- LAUNCHING AIC NODE IN MODE: {self.algorithm_mode}")
 
-        # Get spawn pose parameters from robot_launch.py
-        self.declare_parameter('spawn_x', 0.0)  # Default, but will be overridden by launch
-        self.declare_parameter('spawn_y', 0.0)   # Default, but will be overridden by launch
-        self.declare_parameter('spawn_yaw', 0.0)  # Default, but will be overridden by launch 
-        self.spawn_x = self.get_parameter('spawn_x').get_parameter_value().double_value
-        self.spawn_y = self.get_parameter('spawn_y').get_parameter_value().double_value
-        self.spawn_yaw = self.get_parameter('spawn_yaw').get_parameter_value().double_value
-        self.get_logger().info(f"Spawn pose: ({self.spawn_x:.2f}, {self.spawn_y:.2f}, {self.spawn_yaw:.2f})")
-
         self.time_delta = 1.0
         self.recording_delay = 0.0
         self.ticks_to_wait = int(self.recording_delay / self.time_delta)
@@ -58,8 +49,7 @@ class AICNode(Node):
 
         # Initialize Brain
         self.controller = ActiveInferenceController(logger=self.get_logger(), 
-            algo_mode=self.algorithm_mode, 
-            spawn_pose=np.array([self.spawn_x, self.spawn_y, self.spawn_yaw]))
+            algo_mode=self.algorithm_mode)
         
         # Publishers
         self.metrics_pub = self.create_publisher(Float32MultiArray, '/aic_metrics', 10)
@@ -72,7 +62,8 @@ class AICNode(Node):
         self.controller.set_status_publisher(self.status_pub)
         
         # Positional tracking
-        self.ground_truth_pose = None
+        self.ground_truth_pose = None   #x, y, yaw from ground truth (for logging only)
+        self.starting_pose = None       #x, y, yaw initial spawn position
         
         # Subscribers
         map_qos = QoSProfile(
@@ -96,6 +87,17 @@ class AICNode(Node):
             self.ground_truth_callback,
             10
         )
+
+        # Get starting pose (published by starting_pose_publisher in robot_launch.py)
+        # Use wait_for_message since starting pose is static for entire aic_launch duration
+        try:
+            msg = self.wait_for_message(Point, 'starting_pose', timeout_sec=5.0)
+            self.starting_pose = np.array([msg.x, msg.y, msg.z])
+            self.get_logger().info(f"Received starting pose as numpy array: {self.starting_pose}")
+            self.controller.starting_pose = self.starting_pose
+        except Exception as e:
+            self.get_logger().warn(f"Could not receive starting pose from publisher: {e}. Using 0, 0, 0.")
+            self.starting_pose = np.array([0, 0, 0])
                 
         # Control Loop
         self.timer = self.create_timer(self.time_delta, self.control_loop)
@@ -104,12 +106,29 @@ class AICNode(Node):
         self.amcl_trigger_client = self.create_client(Empty, '/request_nomotion_update')
 
     def ground_truth_callback(self, msg):
-        """Update ground truth position (for logging only)."""
+        """Update ground truth position and orientation (for logging only)."""
         pos = msg.pose.pose.position
-        self.ground_truth_pose = np.array([pos.x, pos.y])
+        orient = msg.pose.pose.orientation
+
         
+        # Extract x, y position
+        self.ground_truth_pose = np.array([pos.x, pos.y, self._quaternion_to_yaw(orient)])
+                
         # **NEW: Pass to controller for logging**
-        self.controller.true_position = self.ground_truth_pose
+        self.controller.ground_truth_pose = self.ground_truth_pose
+    
+    def _quaternion_to_yaw(self, quaternion):
+        """Convert quaternion to yaw angle (rotation around z-axis)."""
+        # quaternion: x, y, z, w
+        x, y, z, w = quaternion.x, quaternion.y, quaternion.z, quaternion.w
+        
+        # Standard conversion formula
+        yaw = np.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+        return yaw
+
+    def starting_pose_callback(self, msg: Point):
+        """DEPRECATED: Use wait_for_message in __init__ instead."""
+        pass
 
     def map_callback(self, msg):
         try:

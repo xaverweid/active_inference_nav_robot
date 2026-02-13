@@ -44,10 +44,11 @@ class ActiveInferenceController:
         
         # --- GROUND TRUTH FOR LOGGING (set by AICNode) ---
         # These are strictly for logging/analysis, NOT for decision-making
-        self.true_position = None           # [x, y] from ground truth (for reference only)
-        self.spawn_pose = spawn_pose        # [x, y, yaw] initial spawn position
-        self.estimated_position = None
+        self.ground_truth_pose = None   # [x, y, yaw] from ground truth (for reference only)
+        self.starting_pose = None   # [x, y, yaw] initial spawn position
+        self.estimated_position = None  # Estimated position (x, y) from belief state (for logging and error calculation)
         self.position_error = None  # Now: distance from spawn to AMCL estimate
+        self.yaw_error = None   # Absolute yaw error between estimated and actual real yaw (which is spawn_yaw + ground_truth_yaw)
         
         # --- METRICS FOR EXPERIMENT LOGGING ---
         self.last_action = None
@@ -142,13 +143,25 @@ class ActiveInferenceController:
         
         # **Compute estimated position (weighted mean)**
         self.estimated_position = np.average(points[:, :2], axis=0, weights=weights)
+        self.estimated_rotation = np.arctan2(
+            np.average(np.sin(points[:, 2]), weights=weights),
+            np.average(np.cos(points[:, 2]), weights=weights)
+        )
         
         # **Compute position error: distance from actual real position to AMCL estimate**
         # Actual real position = spawn_pose + true_position (offset from spawn)
-        if self.spawn_pose is not None and self.true_position is not None:
-            actual_real_position = self.spawn_pose + self.true_position
+        if self.starting_pose is not None and self.ground_truth_pose is not None:
+            actual_real_position = self.starting_pose[:2] + self.ground_truth_pose[:2]
+            self.get_logger().info(f"Starting Position: {self.starting_pose[:2]}, Ground Truth Position: {self.ground_truth_pose[:2]}, Actual Real Position: {actual_real_position}")
+            self.get_logger().info(f"Estimated Position: {self.estimated_position}, Actual Real Position: {actual_real_position}")
             self.position_error = np.linalg.norm(self.estimated_position - actual_real_position)
 
+            actual_real_yaw = self.starting_pose[2] + self.ground_truth_pose[2]
+            rotational_error = abs((self.estimated_rotation - actual_real_yaw + np.pi) % (2 * np.pi) - np.pi)
+            self.yaw_error = rotational_error
+            self.get_logger().info(f"Starting Yaw: {self.starting_pose[2]:.2f}, Ground Truth Yaw: {self.ground_truth_pose[2]:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}")
+            self.get_logger().info(f"Estimated Yaw: {self.estimated_rotation:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}, Yaw Error: {self.yaw_error:.2f}")
+        
         if self.particle_data_pub is not None:
             self._publish_filtered_data()
 
@@ -272,7 +285,8 @@ class ActiveInferenceController:
                 float(self.beta_pragmatic),
                 float(self.runtime_counter),
                 float(self.convergence_parameter),
-                float(self.position_error) if self.position_error is not None else -1.0
+                float(self.position_error) if self.position_error is not None else -1.0,
+                float(self.yaw_error) if self.yaw_error is not None else -1.0
             ]
             self.metrics_pub.publish(metrics_msg)
 
