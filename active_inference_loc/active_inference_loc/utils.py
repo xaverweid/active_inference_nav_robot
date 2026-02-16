@@ -48,6 +48,7 @@ class ParticleClusturer:
         Output: 
             - cluster_poses: The center (mean) of each Gaussian
             - cluster_weights: The 'importance' of each Gaussian (0.0 to 1.0)
+            - cluster_variances: The variance of [x, y] for each Gaussian (K, 2)
         """
         # Validate inputs
         if len(points_4d) != len(weights):
@@ -59,7 +60,7 @@ class ParticleClusturer:
         if len(points_4d) == 0:
             raise ValueError("Cannot cluster empty points array")
         
-        # Resample points according to weights (for older scikit-learn versions)
+        # Resample points according to weights (Manual weighting for scikit-learn)
         n_samples = len(points_4d)
         indices = np.random.choice(
             n_samples, 
@@ -81,10 +82,17 @@ class ParticleClusturer:
         self.gmm.fit(resampled_points)
         
         # 3. Extract Results
-        cluster_poses = [tuple(mean) for mean in self.gmm.means_]
-        cluster_weights = self.gmm.weights_
+        cluster_poses = self.gmm.means_  # Shape (K, 4) -> [x, y, cos, sin]
+        cluster_weights = self.gmm.weights_ # Shape (K,) -> weight of each cluster
         
-        return cluster_poses, cluster_weights
+        # 4. Extract Variances
+        all_covariances = self.gmm.covariances_
+        var_x = all_covariances[:, 0, 0] # Variance of X for all clusters
+        var_y = all_covariances[:, 1, 1] # Variance of Y for all clusters
+
+        cluster_variances = np.column_stack((var_x, var_y))
+
+        return cluster_poses, cluster_weights, cluster_variances
         
 # Utility Functions (non-class): generic ROS/map/geometry conversions
 
@@ -262,35 +270,46 @@ def calculate_shannon_entropy(weights):
     Calculates Shannon Entropy given a list or array of weights.
     Weights should sum to 1.0.
     """
-    weights = np.array(weights)
-    entropy = -np.sum(weights * np.log(weights + 1e-9))
-    return entropy
+    weights = np.asarray(weights)
+    # Ensure no zero weights to avoid log(0)
+    weights = weights[weights > 1e-12]
+    
+    return -np.sum(weights * np.log(weights))
 
-def calculate_convergence(representative_poses, rep_weights):
+def calculate_convergence(representative_poses, rep_weights, cluster_variances):
     """
-    Computes the spatial spread of the GMM clusters.
+    Computes the total uncertainty of the GMM clusters.
+    Args:
+        representative_poses: (K, 4) array of cluster centers
+        rep_weights: (K,) array of weights
+        cluster_variances: (K, 2) array containing [var_x, var_y] for each cluster. 
     Returns: value in meters (lower is more converged).
     """
     if len(representative_poses) == 0:
         return 100.0 # High uncertainty if no clusters
     
-    # 🔒 Enforce NumPy arrays
+    # Enforce NumPy arrays
     representative_poses = np.asarray(representative_poses)
     rep_weights = np.asarray(rep_weights)
     
-    # 1. Extract X and Y
-    coords = representative_poses[:, :2] # Shape (K, 2)
-    
-    # 2. Calculate Weighted Mean Position
+   # 1. Variance BETWEEN clusters
+    coords = representative_poses[:, :2]
     weighted_mean = np.average(coords, axis=0, weights=rep_weights)
-    
-    # 3. Calculate Weighted Variance
-    # sum( w * (pos - mean)^2 )
     sq_diff = (coords - weighted_mean)**2
-    weighted_var = np.average(sq_diff, axis=0, weights=rep_weights)
+    variance_between_means = np.average(sq_diff, axis=0, weights=rep_weights)
     
-    # 4. Total Standard Deviation (Euclidean spread)
-    total_std = np.sqrt(np.sum(weighted_var))
+    # 2. Variance WITHIN clusters (The "Internal Spread")
+    if cluster_variances is not None:
+        cluster_variances = np.asarray(cluster_variances) # Shape (K, 2)
+        variance_within_clusters = np.average(cluster_variances, axis=0, weights=rep_weights)
+    else:
+        variance_within_clusters = np.zeros(2) # Fallback if unknown
+        
+    # 3. Total Variance = Between + Within
+    total_var = variance_between_means + variance_within_clusters
+    
+    # 4. Total Standard Deviation (Euclidean)
+    total_std = np.sqrt(np.sum(total_var))
     
     return float(total_std)
 

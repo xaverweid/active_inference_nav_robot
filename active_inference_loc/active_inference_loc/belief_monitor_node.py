@@ -9,7 +9,7 @@ import numpy as np
 import threading
 
 # Importing your existing utilities
-from .utils import get_map_metadata, ParticleClusturer, get_covariance_ellipse, calculate_shannon_entropy
+from .utils import get_map_metadata, ParticleClusturer, get_covariance_ellipse
 
 class BeliefMonitorNode(Node):
     def __init__(self):
@@ -132,17 +132,7 @@ class BeliefMonitorNode(Node):
             # Now that points are rotated, we cluster them
             cluster_poses, cluster_weights = self.clusturer.get_representative_clusters_from_gmm(rotated_points, weights)
             
-            # 2. CALCULATE BELIEF METRICS
-            # Shannon Entropy: Measures how "confused" the robot is between its 10 clusters
-            # H = -sum(p * log(p))
-            shannon_h = calculate_shannon_entropy(cluster_weights)
-            
-            # Filter Diversity: How even is the belief? 
-            # Max entropy is log(N_clusters). We show what % of that "spread" we have.
-            max_h = np.log(self.clusturer.n_clusters)
-            diversity_ratio = (shannon_h / max_h) * 100
-        
-            # --- 3. RENDERING ---
+            # 2. RENDERING LOGIC
             for artist in list(self.ax.collections) + list(self.ax.patches):
                 artist.remove()
             for txt in list(self.ax.texts):
@@ -188,7 +178,7 @@ class BeliefMonitorNode(Node):
                 f"beta  (pragmatic):  {metrics[4]:.2f}\n"
                 f"-------------------------------\n"
                 f"▼ BELIEF METRICS \n"
-                f"Shannon H (GMM):    {shannon_h:.3f}\n"
+                f"Shannon H (All particles):    {metrics[9]:.2f if len(metrics) > 9 else 'N/A'}\n"
                 f"Convergence:        {metrics[6]:.2f}\n"
                 #f"Filter Diversity:     {diversity_ratio:.1f}%\n"
                 #f"Variational F:        {current_surprise:.2f}\n"
@@ -200,7 +190,8 @@ class BeliefMonitorNode(Node):
                 f"-------------------------------\n"
                 f"Runtime:            {int(metrics[5]):.2f}\n"
                 f"Position Error:     {metrics[7]:.3f if len(metrics) > 7 else 'N/A'}\n "
-                f"Yaw Error:          {metrics[8]:.3f if len(metrics) > 8 else 'N/A'}\n"
+                f"Rotational Error:   {metrics[8]:.3f if len(metrics) > 8 else 'N/A'}\n"
+                f"Selected Action:    {metrics[10] if len(metrics) > 10 else 'N/A'}\n"
             )
             self.dashboard.set_text(table_text)
 

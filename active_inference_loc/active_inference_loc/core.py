@@ -48,12 +48,17 @@ class ActiveInferenceController:
         self.starting_pose = None   # [x, y, yaw] initial spawn position
         self.estimated_position = None  # Estimated position (x, y) from belief state (for logging and error calculation)
         self.position_error = None  # Now: distance from spawn to AMCL estimate
-        self.yaw_error = None   # Absolute yaw error between estimated and actual real yaw (which is spawn_yaw + ground_truth_yaw)
+        self.rotational_error = None   # Absolute yaw error between estimated and actual real yaw (which is spawn_yaw + ground_truth_yaw)
         
         # --- METRICS FOR EXPERIMENT LOGGING ---
-        self.last_action = None
+        self.chosen_action = None
         self.last_raw_epistemic = None
         self.last_raw_pragmatic = None
+
+        self.action_to_id = {
+            action: idx for idx, action in enumerate(self.actions_dict.keys())
+            }
+
     
     def set_particle_publisher(self, pub):
         self.particle_data_pub = pub
@@ -158,9 +163,9 @@ class ActiveInferenceController:
 
             actual_real_yaw = self.starting_pose[2] + self.ground_truth_pose[2]
             rotational_error = abs((self.estimated_rotation - actual_real_yaw + np.pi) % (2 * np.pi) - np.pi)
-            self.yaw_error = rotational_error
+            self.rotational_error = rotational_error
             self.get_logger().info(f"Starting Yaw: {self.starting_pose[2]:.2f}, Ground Truth Yaw: {self.ground_truth_pose[2]:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}")
-            self.get_logger().info(f"Estimated Yaw: {self.estimated_rotation:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}, Yaw Error: {self.yaw_error:.2f}")
+            self.get_logger().info(f"Estimated Yaw: {self.estimated_rotation:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}, Rotational Error: {self.rotational_error:.2f}")
         
         if self.particle_data_pub is not None:
             self._publish_filtered_data()
@@ -179,7 +184,10 @@ class ActiveInferenceController:
         return map_ok and part_ok
 
     def decide_action(self):
-        """Routes to the appropriate control algorithm."""
+        """Routes to the appropriate control algorithm.
+            Returns: action string (e.g., 'FORWARD', 'LEFT', etc.)
+        """
+
         if not self.is_ready():
             return None
 
@@ -187,12 +195,8 @@ class ActiveInferenceController:
             return self._run_active_inference()
         elif self.algo_mode == "random_walk":
             return self._run_random_walk()
-        elif self.algo_mode == "passive_amcl":
-            return self._run_passive_amcl()
-        elif self.algo_mode == "classical_amcl":
-            return self._run_classical_amcl()
-        elif self.algo_mode == "standard_dwa":
-            return self._run_standard_dwa()
+        elif self.algo_mode == "classical_aml":
+            return self._run_classical_aml()
         else:
             self.get_logger().warn(f"Unknown mode '{self.algo_mode}'")
             self.publish_status(f"FAILURE: Unknown mode '{self.algo_mode}'")
@@ -201,29 +205,32 @@ class ActiveInferenceController:
     def _run_active_inference(self):  
         """Active Inference with expected free energy."""
         start_time = time.time()
+
+        # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
+        gmm_poses, gmm_weights = self.update_belief_metrics()
+        
+        termination_action = self.check_termination_conditions()
+        if termination_action:
+            return termination_action
+        
+        # --- PHASE 2: ALGORITHM SPECIFIC LOGIC ---
         initial_particles = np.copy(self.current_particles)
         initial_weights = np.copy(self.current_weights)
         
-        num_total = len(self.current_particles)
+        num_total = len(initial_particles)
         sample_size = min(num_total, 200)
         sample_indices = np.random.choice(num_total, sample_size, replace=False)
         
-        sample_particles = self.current_particles[sample_indices]
-        sample_weights = self.current_weights[sample_indices]
+        sample_particles = initial_particles[sample_indices]
+        sample_weights = initial_weights[sample_indices]
         sample_weights = np.ones(sample_size) / sample_size
-        
-        representative_poses_gmm, rep_weights_gmm = self.clusturer.get_representative_clusters_from_gmm(
-            initial_particles, initial_weights
-        )
      
-        self.shannon_entropy = calculate_shannon_entropy(self.current_weights)
-
         efe_scores = {}
         details = {} 
 
-        initial_poses_gmm = np.copy(representative_poses_gmm)
+        initial_poses_gmm = np.copy(gmm_poses)
         initial_poses_pragmatic = np.copy(sample_particles)
-        initial_weights_gmm = np.copy(rep_weights_gmm)
+        initial_weights_gmm = np.copy(gmm_weights)
         initial_weights_pragmatic = np.copy(sample_weights)
 
         for action in self.actions_dict.keys():
@@ -241,59 +248,23 @@ class ActiveInferenceController:
             self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {raw_epistemic:.2f}, Pragmatic: {raw_pragmatic:.2f})")
         
         best_action = min(efe_scores, key=efe_scores.get)
-
-        if best_action == "WAIT":
-            self.wait_streak += 1
-            if self.wait_streak > 2:
-                sorted_actions = sorted(efe_scores, key=efe_scores.get)
-                best_action = sorted_actions[1]
-                self.get_logger().info("WAIT chosen > 2 times. Using second-best action.")
-        else:
-            self.wait_streak = 0
-
         best_detail = details[best_action]
 
-        # Metrics & Logging
-        total_time = time.time() - start_time
-        self.runtime_counter += 1
-        self.convergence_parameter = calculate_convergence(representative_poses_gmm, rep_weights_gmm)
-        
-        if self.convergence_parameter < self.convergence_threshold:
-            self.get_logger().info("!!! CONVERGENCE REACHED !!!")
-            self.publish_status("SUCCESS: Convergence reached")
-            return "WAIT"
-        if self.runtime_counter > self.max_runtime:
-            self.get_logger().info("!!! MAX RUNTIME REACHED !!!")
-            self.publish_status("FAILURE: Max runtime exceeded")
-            return "WAIT"
-
-        if total_time > self.time_delta:
-            self.get_logger().warn(f"AIC Slowdown: {total_time:.2f}s > {self.time_delta}s")
+        # --- PHASE 3: FINALIZE & PUBLISH ---
+        # Prevent WAIT from being chosen more than 2 times in a row
+        best_action = self.handle_wait_streak(best_action, efe_scores)
 
         # Store for logging
-        self.last_action = best_action
+        self.runtime_counter += 1
+        self.chosen_action = best_action
         self.last_raw_epistemic = best_detail['epistemic']
         self.last_raw_pragmatic = best_detail['pragmatic']
 
-        if self.metrics_pub is not None:
-            metrics_msg = Float32MultiArray()
-            metrics_msg.data = [
-                float(best_detail['epistemic']), 
-                float(best_detail['pragmatic']), 
-                float(efe_scores[best_action]),
-                float(self.alpha_epistemic),
-                float(self.beta_pragmatic),
-                float(self.runtime_counter),
-                float(self.convergence_parameter),
-                float(self.position_error) if self.position_error is not None else -1.0,
-                float(self.yaw_error) if self.yaw_error is not None else -1.0
-            ]
-            self.metrics_pub.publish(metrics_msg)
-
-        self.get_logger().info(
-            f"Result: [{best_action}] | EFE: {efe_scores[best_action]:.2f} "
-            f"| Epistemic: {best_detail['epistemic']:.2f} | Pragmatic: {best_detail['pragmatic']:.2f}"
-        )
+        self.publish_metrics(best_action=best_action, efe_scores=efe_scores, best_detail=best_detail)
+        
+        total_time = time.time() - start_time
+        if total_time > self.time_delta:
+            self.get_logger().warn(f"Slowdown: {total_time:.2f}s")
         
         return best_action
     
@@ -344,28 +315,156 @@ class ActiveInferenceController:
         
         return total_risk * self.risk_penalty_factor
 
-    #TODO: Implement DWA and classical AMCL decision logic if needed. For now, they just return "WAIT" to let external nodes handle them.
+    #TODO: Implement classical AML decision logic if needed. For now, they just return "WAIT" to let external nodes handle them.
     # Make sure to also implement the same requirements as in aic. 
-    # f.e.: after 3 WAITs, select the second-best action to avoid getting stuck in local minima.
+    # Maximal runtime!
     # 
     def _run_random_walk(self):
         """Random action selection."""
-        action = np.random.choice(list(self.actions_dict.keys()))
-        self.get_logger().info(f"Random Walk: {action}")
-        self.last_action = action
-        return action
+        start_time = time.time()
+        
+        # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
+        gmm_poses, gmm_weights = self.update_belief_metrics()
+        
+        termination_action = self.check_termination_conditions()
+        if termination_action:
+            return termination_action
+        
+         # --- PHASE 2: ALGORITHM SPECIFIC LOGIC ---
+        available_actions = list(self.actions_dict.keys())
+        best_action = np.random.choice(available_actions)
+        
+        # Random walk has no "EFE components", so we set them to neutral for the CSV/Logs
+        efe_scores = {action: 0.0 for action in available_actions}
+        best_detail = {'epistemic': 0.0, 'pragmatic': 0.0}
 
-    def _run_passive_amcl(self):
-        """Passive mode: don't move, let AMCL update."""
-        self.last_action = "WAIT"
+        # --- PHASE 3: FINALIZE & PUBLISH ---
+        # Prevent WAIT from being chosen more than 2 times in a row
+        best_action = self.handle_wait_streak(best_action, efe_scores)
+        self.get_logger().info(f"Random Walk: {best_action}")
+
+
+        # Store for logging
+        self.runtime_counter += 1
+        self.chosen_action = best_action
+        self.last_raw_epistemic = best_detail['epistemic']
+        self.last_raw_pragmatic = best_detail['pragmatic']
+
+        self.publish_metrics(best_action=best_action, efe_scores=efe_scores, best_detail=best_detail)
+        
+        total_time = time.time() - start_time
+        if total_time > self.time_delta:
+            self.get_logger().warn(f"Slowdown in Random Walk: {total_time:.2f}s")
+        
+        return best_action
+
+    def _run_classical_aml(self):
+        """Classical AML: update belief but don't take action."""
+        self.chosen_action = "WAIT"
         return "WAIT"
+
+    def handle_wait_streak(self, best_action, efe_scores):
+        """If WAIT is chosen 3 times in a row, pick the second-best action.
+        Input: best_action (string), efe_scores (dict of action to EFE score)
+            - best_action: The action with the lowest score for the current decision step.
+        Output: action string (potentially overridden)
+        """
+        if best_action == "WAIT":
+            self.wait_streak += 1
+            if self.wait_streak > 2:
+                if self.algo_mode != "random_walk":  # For random walk, we have to choose a random new action instead of the second-best
+                    sorted_actions = sorted(efe_scores, key=efe_scores.get)
+                    second_best_action = sorted_actions[1]
+                    self.get_logger().info("WAIT chosen > 2 times. Using second-best action.")
+                    self.wait_streak = 0
+                    return second_best_action
+                else: 
+                    available_actions = list(self.actions_dict.keys())
+                    available_actions.remove("WAIT")
+                    random_action = np.random.choice(available_actions)
+                    self.get_logger().info("WAIT chosen > 2 times in Random Walk. Choosing random action.")
+                    self.wait_streak = 0
+                    return random_action
+        else:
+            self.wait_streak = 0
+        
+        return best_action
     
-    def _run_classical_amcl(self):
-        """Classical AMCL: update belief but don't take action."""
-        self.last_action = "WAIT"
-        return "WAIT"
+    def update_belief_metrics(self):
+        """
+        Calculates and updates standard belief metrics (Entropy & Convergence).
+        Returns:
+            tuple: (representative_poses, rep_weights, rep_variances) for use by the algo.
+        """
+        # 1. Shannon Entropy (Statistical Uncertainty)
+        self.shannon_entropy = calculate_shannon_entropy(self.current_weights)
+
+        # 2. GMM Clustering (Spatial Uncertainty)
+        # We need these clusters for both convergence checking AND decision making
+        gmm_poses, gmm_weights, gmm_vars = self.clusturer.get_representative_clusters_from_gmm(
+            self.current_particles, self.current_weights
+        )
+        
+        # 3. Convergence Parameter (The "Stop" Condition)
+        self.convergence_parameter = calculate_convergence(gmm_poses, gmm_weights, gmm_vars)
+        
+        return gmm_poses, gmm_weights
     
-    def _run_standard_dwa(self):
-        """Standard DWA: handled externally."""
-        self.last_action = None
+    def check_termination_conditions(self):
+        """
+        Checks if the run should end due to convergence or timeout.
+        Returns:
+            str: 'WAIT' if a condition is met, otherwise None.
+        """
+        # Check 1: Convergence
+        if self.convergence_parameter < self.convergence_threshold:
+            self.get_logger().info(f"!!! CONVERGENCE REACHED ({self.convergence_parameter:.3f} < {self.convergence_threshold}) !!!")
+            self.publish_status("SUCCESS: Convergence reached")
+            return "WAIT"
+
+        # Check 2: Max Runtime
+        if self.runtime_counter > self.max_runtime:
+            self.get_logger().info(f"!!! MAX RUNTIME REACHED ({self.runtime_counter}) !!!")
+            self.publish_status("FAILURE: Max runtime exceeded")
+            return "WAIT"
+            
         return None
+    
+    def publish_metrics(self, best_action, efe_scores, best_detail):
+        """
+        Publishes all standard metrics to the ROS topic.
+        Args:
+            best_action (str): The selected action key.
+            efe_scores (dict): Dictionary of scores (or placeholders).
+            best_detail (dict): {'epistemic': float, 'pragmatic': float}.
+        """
+        if self.metrics_pub is None:
+            return
+
+        action_float = self.action_to_id.get(best_action, -1.0) if best_action is not None else -1.0
+        # Convert action string to float ID if necessary (or keep as string if your msg supports it)
+        # Assuming you have a helper or mapping for action->float, otherwise -1.0
+        action_float = -1.0 
+        # Example: action_float = self.action_to_id.get(best_action, -1.0)
+
+        metrics_msg = Float32MultiArray()
+        metrics_msg.data = [
+            float(best_detail.get('epistemic', 0.0)), 
+            float(best_detail.get('pragmatic', 0.0)), 
+            float(efe_scores.get(best_action, 0.0)),
+            float(self.alpha_epistemic),
+            float(self.beta_pragmatic),
+            float(self.runtime_counter),
+            float(self.convergence_parameter),
+            float(self.position_error) if self.position_error is not None else -1.0,
+            float(self.rotational_error) if self.rotational_error is not None else -1.0,
+            float(self.shannon_entropy) if self.shannon_entropy is not None else -1.0,
+            action_float
+        ]
+        self.metrics_pub.publish(metrics_msg)
+        
+        # Optional: Unified Logging
+        self.get_logger().info(
+            f"Step {self.runtime_counter} | Action: {best_action} | "
+            f"Entropy: {self.shannon_entropy:.2f} | Conv: {self.convergence_parameter:.2f}"
+        )

@@ -21,8 +21,8 @@ class ExperimentLogger(Node):
         self.trial_name = trial_name
         self.csv_file = open(f"{trial_name}.csv", mode='w')
         self.writer = csv.writer(self.csv_file)
-        # Header includes position error (from metrics[7])
-        self.writer.writerow(['step', 'position_error', 'yaw_error', 'convergence', 'epistemic', 'pragmatic'])
+        # Header includes position error (from metrics[7]) and rotational error (from metrics[8])
+        self.writer.writerow(['step', 'position_error', 'rotational_error', 'shannon_entropy', 'convergence_gmm', 'epistemic', 'pragmatic', 'selected_action'])
 
         # State
         self.cumulative_distance = 0.0
@@ -53,10 +53,12 @@ class ExperimentLogger(Node):
             self.writer.writerow([
                 self.current_step, 
                 self.metrics[7] if len(self.metrics) > 7 else -1.0,  # position error from AIC metrics
-                self.metrics[8] if len(self.metrics) > 8 else -1.0,  # yaw error from AIC metrics
-                self.metrics[6] if len(self.metrics) > 6 else -1.0,  # convergence
+                self.metrics[8] if len(self.metrics) > 8 else -1.0,  # rotational error from AIC metrics
+                self.metrics[9] if len(self.metrics) > 9 else -1.0,  # shannon entropy from AIC metrics
+                self.metrics[6] if len(self.metrics) > 6 else -1.0,  # convergence gmm from AIC metrics
                 self.metrics[0] if len(self.metrics) > 0 else -1.0,  # epistemic
                 self.metrics[1] if len(self.metrics) > 1 else -1.0,  # pragmatic
+                self.metrics[10] if len(self.metrics) > 10 else -1.0  # selected action
             ])
             self.current_step += 1
             self.csv_file.flush()
@@ -97,7 +99,7 @@ def run_benchmarking():
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["active_inf", "passive_amcl", "random_walk", "classical_amcl", "standard_dwa"]
+    algos = ["active_inf", "random_walk", "classical_aml"]  
     
     summary_f = open('summary_results.csv', mode='w')
     summary_writer = csv.writer(summary_f)
