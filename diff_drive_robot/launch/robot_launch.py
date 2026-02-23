@@ -11,7 +11,7 @@ def generate_launch_description():
 
     x_pose = LaunchConfiguration('x_pose', default='0.0')
     y_pose = LaunchConfiguration('y_pose', default='0.0')
-    yaw_pose = LaunchConfiguration('yaw_pose', default='0.0')
+    yaw_pose = LaunchConfiguration('yaw_pose', default='-1.57')
 
     # Package directory
     pkg_dir = get_package_share_directory('diff_drive_robot') # Make sure this is the correct package name
@@ -75,7 +75,7 @@ def generate_launch_description():
     # Publish starting pose so other nodes can subscribe to it
     starting_pose_publisher = Node(
         package='diff_drive_robot',
-        executable='starting_pose_publisher.py',
+        executable='starting_pose_publisher.py',  # installed as a program
         arguments=[x_pose, y_pose, yaw_pose],
         output='screen'
     )

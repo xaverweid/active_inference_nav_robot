@@ -14,8 +14,16 @@ find_package(rosidl_default_generators REQUIRED)
 # find_package(<dependency> REQUIRED)
 
 install(
-  DIRECTORY launch urdf config worlds rviz models maps scripts
+  DIRECTORY launch urdf config worlds rviz models maps
   DESTINATION share/${PROJECT_NAME}
+)
+
+# Install python scripts as executables so they are placed in
+# <install-space>/lib/${PROJECT_NAME} where ros2 launch can find them.
+install(
+  PROGRAMS
+    scripts/starting_pose_publisher.py
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)

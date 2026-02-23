@@ -57,10 +57,10 @@ def main():
     node = StartingPosePublisher(x, y, yaw)
     
     try:
-        # Spin once to allow the message to be published
-        rclpy.spin_once(node, timeout_sec=0.1)
-    except Exception as e:
-        node.get_logger().error(f"Error: {e}")
+        node.get_logger().info("Publisher running. Press Ctrl+C to stop.")
+        rclpy.spin(node)  # Keep alive indefinitely
+    except KeyboardInterrupt:
+        node.get_logger().info("Shutting down...")
     finally:
         node.destroy_node()
         rclpy.shutdown()
