@@ -313,4 +313,3 @@ def calculate_convergence(representative_poses, rep_weights, cluster_variances):
     
     return float(total_std)
 
-

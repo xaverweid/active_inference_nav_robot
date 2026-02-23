@@ -8,9 +8,10 @@ from nav2_msgs.msg import ParticleCloud
 from threading import Timer
 from .core import ActiveInferenceController
 from .utils import ACTION_EFFECTS, cloud_to_numpy
-from std_srvs.srv import Empty
 from rclpy.time import Time
 import numpy as np
+from tf_transformations import euler_from_quaternion
+from std_srvs.srv import Empty
 
 
 class AICNode(Node):
@@ -64,6 +65,7 @@ class AICNode(Node):
         # Positional tracking
         self.ground_truth_pose = None   #x, y, yaw from ground truth (for logging only)
         self.starting_pose = None       #x, y, yaw initial spawn position
+        self.starting_pose_received = False 
         
         # Subscribers
         map_qos = QoSProfile(
@@ -77,10 +79,10 @@ class AICNode(Node):
         
         self.particle_sub = self.create_subscription(
             ParticleCloud, '/particle_cloud', self.particle_callback,
-            QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.VOLATILE)
+            QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.VOLATILE, depth=1)
         )
         
-        # **NEW: Subscribe to ground truth for logging**
+        # Subscribe to ground truth for metrics
         self.gt_sub = self.create_subscription(
             Odometry,
             '/ground_truth/pose',
@@ -89,46 +91,16 @@ class AICNode(Node):
         )
 
         # Get starting pose (published by starting_pose_publisher in robot_launch.py)
-        # Use wait_for_message since starting pose is static for entire aic_launch duration
-        try:
-            msg = self.wait_for_message(Point, 'starting_pose', timeout_sec=5.0)
-            self.starting_pose = np.array([msg.x, msg.y, msg.z])
-            self.get_logger().info(f"Received starting pose as numpy array: {self.starting_pose}")
-            self.controller.starting_pose = self.starting_pose
-        except Exception as e:
-            self.get_logger().warn(f"Could not receive starting pose from publisher: {e}. Using 0, 0, 0.")
-            self.starting_pose = np.array([0, 0, 0])
+        self.starting_pose_sub = self.create_subscription(
+            Point,'starting_pose', self.starting_pose_callback,
+            QoSProfile(reliability= ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL, depth=1)
+        )
                 
         # Control Loop
         self.timer = self.create_timer(self.time_delta, self.control_loop)
         
         # AMCL Service Client
         self.amcl_trigger_client = self.create_client(Empty, '/request_nomotion_update')
-
-    def ground_truth_callback(self, msg):
-        """Update ground truth position and orientation (for logging only)."""
-        pos = msg.pose.pose.position
-        orient = msg.pose.pose.orientation
-
-        
-        # Extract x, y position
-        self.ground_truth_pose = np.array([pos.x, pos.y, self._quaternion_to_yaw(orient)])
-                
-        # **NEW: Pass to controller for logging**
-        self.controller.ground_truth_pose = self.ground_truth_pose
-    
-    def _quaternion_to_yaw(self, quaternion):
-        """Convert quaternion to yaw angle (rotation around z-axis)."""
-        # quaternion: x, y, z, w
-        x, y, z, w = quaternion.x, quaternion.y, quaternion.z, quaternion.w
-        
-        # Standard conversion formula
-        yaw = np.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
-        return yaw
-
-    def starting_pose_callback(self, msg: Point):
-        """DEPRECATED: Use wait_for_message in __init__ instead."""
-        pass
 
     def map_callback(self, msg):
         try:
@@ -158,6 +130,25 @@ class AICNode(Node):
             self.waiting_for_update = False
             self.ready_to_think = True
 
+    def ground_truth_callback(self, msg):
+        pos = msg.pose.pose.position
+        orient = msg.pose.pose.orientation
+
+        quaternion = [orient.x, orient.y, orient.z, orient.w]
+        roll, pitch, yaw = euler_from_quaternion(quaternion)
+        # Extract x, y position
+        self.ground_truth_pose = np.array([pos.x, pos.y, yaw])
+                
+        # **NEW: Pass to controller for logging**
+        self.controller.ground_truth_pose = self.ground_truth_pose
+    
+    def starting_pose_callback(self, msg):
+        if not self.starting_pose_received:
+            self.starting_pose = np.array([msg.x, msg.y, msg.z])
+            self.starting_pose_received = True
+            self.controller.starting_pose = self.starting_pose
+            self.destroy_subscription(self.starting_pose_sub)
+            
     def control_loop(self):
         """Main decision loop."""
         if self.ticks_passed < self.ticks_to_wait:
@@ -172,8 +163,14 @@ class AICNode(Node):
             self.get_logger().warn("Control loop: Waiting for particle cloud...", throttle_duration_sec=5.0)
             return
         
+        if not self.starting_pose_received:
+            self.get_logger().warn("Control loop: Waiting for starting pose", throttle_duration_sec=5.0)
+            return
+           
         if not self.system_active:
-            self.get_logger().info("🚀 System ready. Active Inference starting.")
+            self.get_logger().info("🚀 All system prerequisites met. Active Inference starting.")
+            self.get_logger().info(f"Starting pose is {self.starting_pose}")
+
             self.system_active = True
 
         if not self.ready_to_think or self.waiting_for_update:

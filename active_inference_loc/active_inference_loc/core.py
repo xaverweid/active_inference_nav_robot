@@ -156,16 +156,32 @@ class ActiveInferenceController:
         # **Compute position error: distance from actual real position to AMCL estimate**
         # Actual real position = spawn_pose + true_position (offset from spawn)
         if self.starting_pose is not None and self.ground_truth_pose is not None:
-            actual_real_position = self.starting_pose[:2] + self.ground_truth_pose[:2]
-            self.get_logger().info(f"Starting Position: {self.starting_pose[:2]}, Ground Truth Position: {self.ground_truth_pose[:2]}, Actual Real Position: {actual_real_position}")
-            self.get_logger().info(f"Estimated Position: {self.estimated_position}, Actual Real Position: {actual_real_position}")
-            self.position_error = np.linalg.norm(self.estimated_position - actual_real_position)
-
+            # Rotate ground_truth position by starting yaw to map frame
+            cos_yaw = np.cos(self.starting_pose[2])
+            sin_yaw = np.sin(self.starting_pose[2])
+            
+            # Apply 2D rotation matrix
+            rotated_x = self.ground_truth_pose[0] * cos_yaw - self.ground_truth_pose[1] * sin_yaw
+            rotated_y = self.ground_truth_pose[0] * sin_yaw + self.ground_truth_pose[1] * cos_yaw
+            
+            # Now add to starting position
+            actual_real_position = self.starting_pose[:2] + np.array([rotated_x, rotated_y])
+            
+            # Yaw is additive (angles add)
             actual_real_yaw = self.starting_pose[2] + self.ground_truth_pose[2]
+            
+            # Calculate errors
+            self.position_error = np.linalg.norm(self.estimated_position - actual_real_position)
             rotational_error = abs((self.estimated_rotation - actual_real_yaw + np.pi) % (2 * np.pi) - np.pi)
             self.rotational_error = rotational_error
+            
+            # Logging
+            self.get_logger().info(f"Starting Position: {self.starting_pose[:2]:.2f}, Ground Truth Position: {self.ground_truth_pose[:2]:.2f}, Actual Real Position: {actual_real_position}")
+            self.get_logger().info(f"Estimated Position: {self.estimated_position}, Actual Real Position: {actual_real_position}, Positional Error: {self.position_error:.2f}")
             self.get_logger().info(f"Starting Yaw: {self.starting_pose[2]:.2f}, Ground Truth Yaw: {self.ground_truth_pose[2]:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}")
             self.get_logger().info(f"Estimated Yaw: {self.estimated_rotation:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}, Rotational Error: {self.rotational_error:.2f}")
+        else:
+            self.get_logger().warn("Controller Error: Starting Pose or Ground Truth Pose not available")
         
         if self.particle_data_pub is not None:
             self._publish_filtered_data()

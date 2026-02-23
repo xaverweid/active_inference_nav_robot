@@ -27,7 +27,7 @@ class StartingPosePublisher(Node):
         # Create numpy array with the pose
         pose_array = np.array([x, y, yaw])
         
-        # Publish once immediately using Point message (x, y, z for x, y, yaw)
+        # Publish using Point message (x, y, z for x, y, yaw)
         msg = Point()
         msg.x = float(x)
         msg.y = float(y)
