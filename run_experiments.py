@@ -22,7 +22,7 @@ class ExperimentLogger(Node):
         self.csv_file = open(f"{trial_name}.csv", mode='w')
         self.writer = csv.writer(self.csv_file)
         # Header includes position error (from metrics[7]) and rotational error (from metrics[8])
-        self.writer.writerow(['step', 'position_error', 'rotational_error', 'shannon_entropy', 'convergence_gmm', 'epistemic', 'pragmatic', 'selected_action'])
+        self.writer.writerow(['step', 'position_error', 'rotational_error', 'shannon_entropy', 'spatial_entropy','convergence_gmm', 'epistemic', 'pragmatic', 'selected_action'])
 
         # State
         self.cumulative_distance = 0.0
@@ -37,7 +37,6 @@ class ExperimentLogger(Node):
 
     def metrics_callback(self, msg):
         """
-        msg.data: [epistemic, pragmatic, total_efe, alpha, beta, runtime, convergence, position_error, yaw_error]
         TODO: Check with core.py publish_metrics() for exact order and content.
         """
         self.metrics = msg.data
@@ -55,10 +54,11 @@ class ExperimentLogger(Node):
                 self.metrics[7] if len(self.metrics) > 7 else -1.0,  # position error from AIC metrics
                 self.metrics[8] if len(self.metrics) > 8 else -1.0,  # rotational error from AIC metrics
                 self.metrics[9] if len(self.metrics) > 9 else -1.0,  # shannon entropy from AIC metrics
+                self.metrics[10] if len(self.metrics) > 10 else -1.0, # spatial entropy from AIC metrics
                 self.metrics[6] if len(self.metrics) > 6 else -1.0,  # convergence gmm from AIC metrics
                 self.metrics[0] if len(self.metrics) > 0 else -1.0,  # epistemic
                 self.metrics[1] if len(self.metrics) > 1 else -1.0,  # pragmatic
-                self.metrics[10] if len(self.metrics) > 10 else -1.0  # selected action
+                self.metrics[11] if len(self.metrics) > 11 else -1.0  # selected action
             ])
             self.current_step += 1
             self.csv_file.flush()
