@@ -130,7 +130,7 @@ class BeliefMonitorNode(Node):
             rotated_points[:, 3] = raw_points[:, 2]
 
             # Now that points are rotated, we cluster them
-            cluster_poses, cluster_weights = self.clusturer.get_representative_clusters_from_gmm(rotated_points, weights)
+            cluster_poses, cluster_weights, _ = self.clusturer.get_representative_clusters_from_gmm(rotated_points, weights)
             
             # 2. RENDERING LOGIC
             for artist in list(self.ax.collections) + list(self.ax.patches):
@@ -171,17 +171,21 @@ class BeliefMonitorNode(Node):
                                 head_width=0.1, zorder=5, alpha=min(1.0, weight*5))
                 
             # Dashboard Update
-            # current_surprise = -np.log(np.max(cluster_weights) + 1e-9) 
+
+            shannon_h = f"{metrics[9]:.2f}" if len(metrics) > 9 else 'N/A'
+            spatial_entropy = f"{metrics[10]:.2f}" if len(metrics) > 10 else 'N/A'
+            pos_error = f"{metrics[7]:.3f}" if len(metrics) > 7 else 'N/A'
+            rot_error = f"{metrics[8]:.3f}" if len(metrics) > 8 else 'N/A'
+            action = metrics[11] if len(metrics) > 11 else 'N/A'
             table_text = (
                 f"▼ PARAMETERS (fixed)\n"
                 f"alpha (epistemic):  {metrics[3]:.2f}\n"
                 f"beta  (pragmatic):  {metrics[4]:.2f}\n"
                 f"-------------------------------\n"
                 f"▼ BELIEF METRICS \n"
-                f"Shannon H (All particles):    {metrics[9]:.2f if len(metrics) > 9 else 'N/A'}\n"
-                f"Convergence:        {metrics[6]:.2f}\n"
-                #f"Filter Diversity:     {diversity_ratio:.1f}%\n"
-                #f"Variational F:        {current_surprise:.2f}\n"
+                f"Shannon H (All P):  {shannon_h}\n"
+                f"Spatial H:          {spatial_entropy}\n"
+                f"Convergence (GMM):  {metrics[6]:.2f}\n"
                 f"-------------------------------\n"
                 f"▼ AIC POLICY (G)\n"
                 f"Expected Epistemic: {metrics[0]:.2f}\n"
@@ -189,9 +193,9 @@ class BeliefMonitorNode(Node):
                 f"Total Expected G:   {metrics[2]:.2f}\n"
                 f"-------------------------------\n"
                 f"Runtime:            {int(metrics[5]):.2f}\n"
-                f"Position Error:     {metrics[7]:.3f if len(metrics) > 7 else 'N/A'}\n "
-                f"Rotational Error:   {metrics[8]:.3f if len(metrics) > 8 else 'N/A'}\n"
-                f"Selected Action:    {metrics[10] if len(metrics) > 10 else 'N/A'}\n"
+                f"Position Error:     {pos_error}\n"
+                f"Rotational Error:   {rot_error}\n"
+                f"Selected Action:    {action}\n"
             )
             self.dashboard.set_text(table_text)
 

@@ -313,3 +313,41 @@ def calculate_convergence(representative_poses, rep_weights, cluster_variances):
     
     return float(total_std)
 
+import numpy as np
+
+def calculate_spatial_entropy(particles, weights, xy_resolution=0.2):
+    """
+    Calculates the spatial Shannon Entropy of the particle cloud.
+    xy_resolution: The size of the grid cells in meters (e.g., 0.2m x 0.2m).
+    """
+    x = particles[:, 0]
+    y = particles[:, 1]
+    
+    # 1. Define the grid boundaries dynamically based on the particle spread
+    x_min, x_max = np.min(x), np.max(x)
+    y_min, y_max = np.min(y), np.max(y)
+    
+    # 2. Create grid edges based on the resolution
+    x_bins = np.arange(x_min, x_max + xy_resolution, xy_resolution)
+    y_bins = np.arange(y_min, y_max + xy_resolution, xy_resolution)
+    
+    # Handle edge case where all particles are in the exact same spot
+    if len(x_bins) < 2 or len(y_bins) < 2:
+        return 0.0
+
+    # 3. Bin the particles using their weights
+    # If just resampled, weights are uniform, so it relies on particle count per bin.
+    # If not resampled yet, it uses the actual pre-resample belief mass.
+    hist, _, _ = np.histogram2d(x, y, bins=[x_bins, y_bins], weights=weights)
+    
+    # 4. Flatten the 2D grid into a 1D array of probabilities
+    p = hist.flatten()
+    
+    # 5. Filter out empty cells and normalize (just in case)
+    p = p[p > 1e-12]
+    p = p / np.sum(p)
+    
+    # 6. Calculate standard Shannon Entropy
+    spatial_entropy = -np.sum(p * np.log(p))
+    
+    return float(spatial_entropy)

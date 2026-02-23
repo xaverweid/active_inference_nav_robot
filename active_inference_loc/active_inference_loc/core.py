@@ -2,7 +2,7 @@ import numpy as np
 import time
 from nav2_msgs.msg import Particle, ParticleCloud
 import scipy
-from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence
+from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence, calculate_spatial_entropy
 from .models import predict_motion, raycast_scan
 from std_msgs.msg import Float32MultiArray, String
 from geometry_msgs.msg import Pose, Quaternion, Point
@@ -14,7 +14,7 @@ class ActiveInferenceController:
     Handles decision logic for all control modes.
     """
     
-    def __init__(self, logger, algo_mode='active_inf', spawn_pose=np.array([0.0, 0.0, 0.0])):
+    def __init__(self, logger, algo_mode='active_inf'):
         self.logger = logger
         self.algo_mode = algo_mode
         self.metrics_pub = None
@@ -28,10 +28,13 @@ class ActiveInferenceController:
         self.current_weights = None
         self.actions_dict = ACTION_EFFECTS
         self.shannon_entropy = None
+        self.shannon_entropy_norm = None
+        self.effective_sample_size_percent = None
         self.runtime_counter = 0
         self.max_runtime = 300
         self.convergence_parameter = 100
         self.planning_sigma = 0.7   # A value between 0.5 and 1.0 is usually 'reasonable' for planning.
+        self.spatial_entropy_res = 0.25 # 25cm bins
 
         self.wait_streak = 0
         self.clock = None
@@ -152,7 +155,12 @@ class ActiveInferenceController:
             np.average(np.sin(points[:, 2]), weights=weights),
             np.average(np.cos(points[:, 2]), weights=weights)
         )
-        
+        # Apply the same 270° CW rotation to match map frame
+        # 270° CW = -π/2 radians
+        self.estimated_rotation_map_frame = self.estimated_rotation - np.pi/2
+        # Normalize to [-π, π]
+        self.estimated_rotation_map_frame = (self.estimated_rotation_map_frame + np.pi) % (2 * np.pi) - np.pi
+
         # **Compute position error: distance from actual real position to AMCL estimate**
         # Actual real position = spawn_pose + true_position (offset from spawn)
         if self.starting_pose is not None and self.ground_truth_pose is not None:
@@ -163,7 +171,7 @@ class ActiveInferenceController:
             # Apply 2D rotation matrix
             rotated_x = self.ground_truth_pose[0] * cos_yaw - self.ground_truth_pose[1] * sin_yaw
             rotated_y = self.ground_truth_pose[0] * sin_yaw + self.ground_truth_pose[1] * cos_yaw
-            
+    
             # Now add to starting position
             actual_real_position = self.starting_pose[:2] + np.array([rotated_x, rotated_y])
             
@@ -172,14 +180,14 @@ class ActiveInferenceController:
             
             # Calculate errors
             self.position_error = np.linalg.norm(self.estimated_position - actual_real_position)
-            rotational_error = abs((self.estimated_rotation - actual_real_yaw + np.pi) % (2 * np.pi) - np.pi)
+            rotational_error = abs((self.estimated_rotation_map_frame - actual_real_yaw + np.pi) % (2 * np.pi) - np.pi)
             self.rotational_error = rotational_error
             
             # Logging
-            self.get_logger().info(f"Starting Position: {self.starting_pose[:2]:.2f}, Ground Truth Position: {self.ground_truth_pose[:2]:.2f}, Actual Real Position: {actual_real_position}")
+            self.get_logger().info(f"Starting Position: {self.starting_pose[:2]}, Ground Truth Position: {self.ground_truth_pose[:2]}, Actual Real Position: {actual_real_position}")
             self.get_logger().info(f"Estimated Position: {self.estimated_position}, Actual Real Position: {actual_real_position}, Positional Error: {self.position_error:.2f}")
             self.get_logger().info(f"Starting Yaw: {self.starting_pose[2]:.2f}, Ground Truth Yaw: {self.ground_truth_pose[2]:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}")
-            self.get_logger().info(f"Estimated Yaw: {self.estimated_rotation:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}, Rotational Error: {self.rotational_error:.2f}")
+            self.get_logger().info(f"Estimated Yaw (raw): {self.estimated_rotation:.2f}, Estimated Yaw (map frame): {self.estimated_rotation_map_frame:.2f}, Rotational Error: {self.rotational_error:.2f}")
         else:
             self.get_logger().warn("Controller Error: Starting Pose or Ground Truth Pose not available")
         
@@ -414,6 +422,7 @@ class ActiveInferenceController:
         """
         # 1. Shannon Entropy (Statistical Uncertainty)
         self.shannon_entropy = calculate_shannon_entropy(self.current_weights)
+        self.spatial_entropy = calculate_spatial_entropy(self.current_particles, self.current_weights, self.spatial_entropy_res)
 
         # 2. GMM Clustering (Spatial Uncertainty)
         # We need these clusters for both convergence checking AND decision making
@@ -465,17 +474,18 @@ class ActiveInferenceController:
 
         metrics_msg = Float32MultiArray()
         metrics_msg.data = [
-            float(best_detail.get('epistemic', 0.0)), 
-            float(best_detail.get('pragmatic', 0.0)), 
-            float(efe_scores.get(best_action, 0.0)),
-            float(self.alpha_epistemic),
-            float(self.beta_pragmatic),
-            float(self.runtime_counter),
-            float(self.convergence_parameter),
-            float(self.position_error) if self.position_error is not None else -1.0,
-            float(self.rotational_error) if self.rotational_error is not None else -1.0,
-            float(self.shannon_entropy) if self.shannon_entropy is not None else -1.0,
-            action_float
+            float(best_detail.get('epistemic', 0.0)), #0
+            float(best_detail.get('pragmatic', 0.0)), #1
+            float(efe_scores.get(best_action, 0.0)), #2
+            float(self.alpha_epistemic), #3
+            float(self.beta_pragmatic), #4
+            float(self.runtime_counter), #5
+            float(self.convergence_parameter), #6
+            float(self.position_error) if self.position_error is not None else -1.0, #7
+            float(self.rotational_error) if self.rotational_error is not None else -1.0, #8
+            float(self.shannon_entropy) if self.shannon_entropy is not None else -1.0, #9
+            float(self.spatial_entropy) if self.spatial_entropy is not None else -1.0, #10
+            action_float, #11
         ]
         self.metrics_pub.publish(metrics_msg)
         
