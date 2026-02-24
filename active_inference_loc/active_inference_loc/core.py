@@ -14,7 +14,7 @@ class ActiveInferenceController:
     Handles decision logic for all control modes.
     """
     
-    def __init__(self, logger, algo_mode='active_inf'):
+    def __init__(self, logger, algo_mode):
         self.logger = logger
         self.algo_mode = algo_mode
         self.metrics_pub = None
@@ -444,7 +444,7 @@ class ActiveInferenceController:
 
     def _run_entropy_min(self):
 
-        return self._run_active_inference(self, use_gmm_comparison=True, n_raycast_particles=5, n_time_horizon=1, only_epistemic=True)
+        return self._run_active_inference(only_epistemic=True)
 
     def handle_wait_streak(self, best_action, efe_scores, safe_actions):
         """

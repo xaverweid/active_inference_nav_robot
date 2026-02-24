@@ -22,7 +22,7 @@ def generate_launch_description():
     algo_mode_arg = DeclareLaunchArgument(
         'algo_mode',
         default_value='active_inf',
-        description='Algorithm mode: active_inf, passive_amcl, random_walk, classical_amcl, standard_dwa'
+        description='Algorithm mode: active_inf, random_walk, entropy_min'
     )
     
     use_sim_time_arg = DeclareLaunchArgument(

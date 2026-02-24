@@ -28,13 +28,13 @@ class AICNode(Node):
         super().__init__('aic_node')
 
         # Get parameters from via aic_launch.py
-        self.declare_parameter('algo_mode', 'active_inf')
+        self.declare_parameter('algo_mode', 'entropy_min')
         self.algorithm_mode = self.get_parameter('algo_mode').get_parameter_value().string_value
         self.get_logger().info(f"--- LAUNCHING AIC NODE IN MODE: {self.algorithm_mode}")
 
         self.time_delta = 1.0
-        self.recording_delay = 5.0
-        self.ticks_to_wait = int(self.recording_delay / self.time_delta)
+        self.startup_delay = 10.0
+        self.ticks_to_wait = int(self.startup_delay / self.time_delta)
         self.ticks_passed = 0
 
         # State Tracking
