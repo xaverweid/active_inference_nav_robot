@@ -225,18 +225,20 @@ class ActiveInferenceController:
             return self._run_active_inference()
         elif self.algo_mode == "random_walk":
             return self._run_random_walk()
-        elif self.algo_mode == "classical_aml":
-            return self._run_classical_aml()
+        elif self.algo_mode == "entropy_min":
+            return self._run_entropy_min()
         else:
             self.get_logger().warn(f"Unknown mode '{self.algo_mode}'")
             self.publish_status(f"FAILURE: Unknown mode '{self.algo_mode}'")
             return "WAIT"
 
-    def _run_active_inference(self, use_gmm_comparison=True, n_raycast_particles=5, n_time_horizon=1):  
+    def _run_active_inference(self, use_gmm_comparison=True, n_raycast_particles=5, n_time_horizon=1, only_epistemic=False):  
         """Active Inference with expected free energy.
-        n_raycast_particles: how many particles should be used for the epistemic calculation (5 with gmm, 50, 500)
-            pragmatic always 500
-        n_time_horizon: time horizon looking into the future (n discrete actions ^ n_time_horizon)
+        Input: 
+        - use_gmm_comparison: GMM clusterer or sampled particles
+        - n_raycast_particles: Number of sampled particles (5, 50, 500) for epistemic. pragmatic always 500
+        - n_time_horizon: Number of time horizon into the future (1 or 3)
+        - only_epistemic: if Yes, the pragmatic value is ignored, so 0 for each action
         """
         start_time = time.time()
 
@@ -280,9 +282,13 @@ class ActiveInferenceController:
             pred_clusters = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration) for p in initial_poses_gmm])
             raw_epistemic = self.calculate_efe_epistemic(pred_clusters, initial_weights_gmm)
 
-            pred_particles = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration) for p in initial_poses_pragmatic])
-            raw_pragmatic = self.calculate_efe_pragmatic(pred_particles, initial_weights_pragmatic)
+            if only_epistemic:
+                raw_pragmatic = 0.0
             
+            else:
+                pred_particles = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration) for p in initial_poses_pragmatic])
+                raw_pragmatic = self.calculate_efe_pragmatic(pred_particles, initial_weights_pragmatic)
+
             total_efe = (self.alpha_epistemic * raw_epistemic) + (self.beta_pragmatic * raw_pragmatic)
             efe_scores[action] = total_efe
             details[action] = {'epistemic': self.alpha_epistemic * raw_epistemic, 'pragmatic': self.beta_pragmatic * raw_pragmatic}
@@ -436,10 +442,9 @@ class ActiveInferenceController:
         
         return best_action
 
-    def _run_classical_aml(self):
-        """Classical AML: update belief but don't take action."""
-        self.chosen_action = "WAIT"
-        return "WAIT"
+    def _run_entropy_min(self):
+
+        return self._run_active_inference(self, use_gmm_comparison=True, n_raycast_particles=5, n_time_horizon=1, only_epistemic=True)
 
     def handle_wait_streak(self, best_action, efe_scores, safe_actions):
         """
@@ -454,12 +459,14 @@ class ActiveInferenceController:
             self.wait_streak += 1
             if self.wait_streak > 2:
                 if self.algo_mode != "random_walk":  
+                    # For non-random control all available actions are basically safe, therefore ignore safe_actions variable
                     sorted_actions = sorted(efe_scores, key=efe_scores.get)
                     second_best_action = sorted_actions[1]
                     self.get_logger().info("WAIT chosen > 2 times. Using second-best action.")
                     self.wait_streak = 0
                     return second_best_action
-                else: # For random walk, we have to choose a random new action from the safe_actions list
+                else: 
+                    # For random walk, we have to choose a random new action from the safe_actions list
                     safe_alternatives = [a for a in safe_actions if a != "WAIT"]
                 
                     if len(safe_alternatives) > 0:

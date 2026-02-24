@@ -99,7 +99,7 @@ def run_benchmarking():
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["active_inf", "random_walk", "classical_aml"]  
+    algos = ["active_inf", "random_walk", "entropy_min"]  
     
     summary_f = open('summary_results.csv', mode='w')
     summary_writer = csv.writer(summary_f)
