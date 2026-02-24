@@ -1,10 +1,12 @@
 import numpy as np
+from numba import njit
+
 
 # --- 1. Motion Model ---
 def predict_motion(pose_4d, action_type, action_dict, dt):
     """
     Predicts the future state of a cluster center over a fixed time step dt.
-    pose_4d: [x, y, cos(theta), sin(theta)]
+    pose_4d: [x, y, cos(deatheta), sin(theta)]
     action_type: string key into action_dict containing linear (m/s) and angular (rad/s)
     dt: time delta in seconds the action is applied for (discrete step)
     Returns: new 4D pose numpy array [x, y, cos(theta), sin(theta)]
@@ -35,7 +37,7 @@ def predict_motion(pose_4d, action_type, action_dict, dt):
 
 
 # --- 2. Simplified Raycaster (Needs the map!) ---
-# You'll need the map as a 2D numpy array and its metadata (resolution, origin)
+# Based on distance map and its metadata (resolution, origin)
 def raycast_scan(poses_4d, dist_map, map_metadata, fov_deg=180, num_beams=8):
     res = map_metadata['resolution']
     ox = map_metadata['origin_x']
@@ -84,7 +86,7 @@ def raycast_scan(poses_4d, dist_map, map_metadata, fov_deg=180, num_beams=8):
         all_scans.append(particle_ranges)
     return np.array(all_scans)
 
-from numba import njit
+
 
 @njit
 def raycast_numba(poses_4d, dist_map, res, ox, oy, angles, max_range):
@@ -118,3 +120,5 @@ def raycast_numba(poses_4d, dist_map, res, ox, oy, angles, max_range):
                     break
             results[i, j] = dist
     return results
+    
+    
