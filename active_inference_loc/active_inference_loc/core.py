@@ -2,7 +2,7 @@ import numpy as np
 import time
 from nav2_msgs.msg import Particle, ParticleCloud
 import scipy
-from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence, calculate_spatial_entropy
+from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence, calculate_spatial_entropy, is_pose_in_collision
 from .models import predict_motion, raycast_scan
 from std_msgs.msg import Float32MultiArray, String
 from geometry_msgs.msg import Pose, Quaternion, Point
@@ -50,6 +50,8 @@ class ActiveInferenceController:
         # These are strictly for logging/analysis, NOT for decision-making
         self.ground_truth_pose = None   # [x, y, yaw] from ground truth (for reference only)
         self.starting_pose = None   # [x, y, yaw] initial spawn position
+        self.actual_real_position = None # gt + starting pose (x,y)
+        self.actual_real_yaw = None # (z)
         self.estimated_position = None  # Estimated position (x, y) from belief state (for logging and error calculation)
         self.position_error = None  # Now: distance from spawn to AMCL estimate
         self.rotational_error = None   # Absolute yaw error between estimated and actual real yaw (which is spawn_yaw + ground_truth_yaw)
@@ -176,9 +178,11 @@ class ActiveInferenceController:
     
             # Now add to starting position
             actual_real_position = self.starting_pose[:2] + np.array([rotated_x, rotated_y])
+            self.actual_real_position = actual_real_position
             
             # Yaw is additive (angles add)
             actual_real_yaw = self.starting_pose[2] + self.ground_truth_pose[2]
+            self.actual_real_yaw = actual_real_yaw
             
             # Calculate errors
             self.position_error = np.linalg.norm(self.estimated_position - actual_real_position)
@@ -228,8 +232,12 @@ class ActiveInferenceController:
             self.publish_status(f"FAILURE: Unknown mode '{self.algo_mode}'")
             return "WAIT"
 
-    def _run_active_inference(self, n_raycast_particles):  
-        """Active Inference with expected free energy."""
+    def _run_active_inference(self, use_gmm_comparison=True, n_raycast_particles=5, n_time_horizon=1):  
+        """Active Inference with expected free energy.
+        n_raycast_particles: how many particles should be used for the epistemic calculation (5 with gmm, 50, 500)
+            pragmatic always 500
+        n_time_horizon: time horizon looking into the future (n discrete actions ^ n_time_horizon)
+        """
         start_time = time.time()
 
         # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
@@ -242,22 +250,29 @@ class ActiveInferenceController:
         # --- PHASE 2: ALGORITHM SPECIFIC LOGIC ---
         initial_particles = np.copy(self.current_particles)
         initial_weights = np.copy(self.current_weights)
+        num_total_p = len(initial_particles)
+
+        #Epistemic
+        #TODO: 
+        # check for n_raycast_particles to determine particle n and weights n for epistemic
+        # If GMM is yes, then n_raycast_particles is always 5, and we simply use the gmm_poses and gmm_weights from above
+        # If GMM is no, then we 
         
-        num_total = len(initial_particles)
-        sample_size = min(num_total, 200)
-        sample_indices = np.random.choice(num_total, sample_size, replace=False)
-        
-        sample_particles = initial_particles[sample_indices]
-        sample_weights = initial_weights[sample_indices]
-        sample_weights = np.ones(sample_size) / sample_size
-     
+        initial_poses_gmm = np.copy(gmm_poses)
+        initial_weights_gmm = np.copy(gmm_weights)
+
+        #Pragmatic
+        sample_size_pragmatic = min(num_total_p, 500)
+        sample_indices_pragmatic = np.random.choice(num_total_p, sample_size_pragmatic, replace=False)
+        sample_particles_pragmatic = initial_particles[sample_indices_pragmatic]
+        sample_weights_pragmatic = initial_weights[sample_indices_pragmatic]
+        sample_weights_pragmatic = np.ones(sample_size_pragmatic) / sample_size_pragmatic
+        initial_poses_pragmatic = np.copy(sample_particles_pragmatic)
+        initial_weights_pragmatic = np.copy(sample_weights_pragmatic)
+
+        #Loop
         efe_scores = {}
         details = {} 
-
-        initial_poses_gmm = np.copy(gmm_poses)
-        initial_poses_pragmatic = np.copy(sample_particles)
-        initial_weights_gmm = np.copy(gmm_weights)
-        initial_weights_pragmatic = np.copy(sample_weights)
 
         for action in self.actions_dict.keys():
             actual_duration = self.time_delta - 0.1
@@ -278,7 +293,7 @@ class ActiveInferenceController:
 
         # --- PHASE 3: FINALIZE & PUBLISH ---
         # Prevent WAIT from being chosen more than 2 times in a row
-        best_action = self.handle_wait_streak(best_action, efe_scores)
+        best_action = self.handle_wait_streak(best_action, efe_scores, list(self.actions_dict.keys()))
 
         # Store for logging
         self.runtime_counter += 1
@@ -286,7 +301,7 @@ class ActiveInferenceController:
         self.last_raw_epistemic = best_detail['epistemic']
         self.last_raw_pragmatic = best_detail['pragmatic']
 
-        self.publish_metrics(best_action=best_action, efe_scores=efe_scores, best_detail=best_detail)
+        self.publish_metrics(best_action, efe_scores, best_detail)
         
         total_time = time.time() - start_time
         self.get_logger().warn(f"Total Time AIC Calculation (efe evaluation): {total_time:.2f}s")
@@ -346,7 +361,7 @@ class ActiveInferenceController:
     #TODO: Implement classical AML decision logic if needed. For now, they just return "WAIT" to let external nodes handle them.
     # Make sure to also implement the same requirements as in aic. 
     # Maximal runtime!
-    # 
+    
     def _run_random_walk(self):
         """Random action selection."""
         start_time = time.time()
@@ -358,17 +373,52 @@ class ActiveInferenceController:
         if termination_action:
             return termination_action
         
-         # --- PHASE 2: ALGORITHM SPECIFIC LOGIC ---
+        # --- PHASE 2: ALGORITHM SPECIFIC LOGIC ---
         available_actions = list(self.actions_dict.keys())
-        best_action = np.random.choice(available_actions)
-        
+
+        # Check if we have the actual position available
+        if self.actual_real_position is not None and self.actual_real_yaw is not None:
+            current_pose = [
+                self.actual_real_position[0],
+                self.actual_real_position[1],
+                self.actual_real_yaw
+            ]
+            # HARD CONSTRAINT: Filter collision-causing actions
+            safe_actions = []
+            for action in available_actions:
+                # Convert 3D to 4D pose
+                x, y, yaw = current_pose
+                pose_4d = np.array([x, y, np.cos(yaw), np.sin(yaw)])
+                
+                # Predict resulting pose from this action
+                predicted_pose = predict_motion(pose_4d, action, self.actions_dict, self.time_delta - 0.1)
+                
+                # Convert back to 3D for collision check
+                pred_xyz = [
+                    predicted_pose[0],
+                    predicted_pose[1],
+                    np.arctan2(predicted_pose[3], predicted_pose[2])
+                ]
+                
+                # Check if predicted pose causes collision
+                if not is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map,
+                                            robot_radius=0.18, safety_margin=0.05):
+                    safe_actions.append(action)
+            
+            self.get_logger().info(f"Collision filter: {len(safe_actions)}/{len(available_actions)} safe")
+        else:
+            # Position not available yet, skip collision checking
+            self.get_logger().warn("Actual position not available, using all actions")
+            safe_actions = available_actions
+       
+        best_action = np.random.choice(safe_actions)
         # Random walk has no "EFE components", so we set them to neutral for the CSV/Logs
         efe_scores = {action: 0.0 for action in available_actions}
         best_detail = {'epistemic': 0.0, 'pragmatic': 0.0}
 
         # --- PHASE 3: FINALIZE & PUBLISH ---
         # Prevent WAIT from being chosen more than 2 times in a row
-        best_action = self.handle_wait_streak(best_action, efe_scores)
+        best_action = self.handle_wait_streak(best_action, efe_scores, safe_actions=safe_actions)
         self.get_logger().info(f"Random Walk: {best_action}")
 
 
@@ -378,7 +428,7 @@ class ActiveInferenceController:
         self.last_raw_epistemic = best_detail['epistemic']
         self.last_raw_pragmatic = best_detail['pragmatic']
 
-        self.publish_metrics(best_action=best_action, efe_scores=efe_scores, best_detail=best_detail)
+        self.publish_metrics(best_action, efe_scores, best_detail)
         
         total_time = time.time() - start_time
         if total_time > self.time_delta:
@@ -391,28 +441,35 @@ class ActiveInferenceController:
         self.chosen_action = "WAIT"
         return "WAIT"
 
-    def handle_wait_streak(self, best_action, efe_scores):
-        """If WAIT is chosen 3 times in a row, pick the second-best action.
-        Input: best_action (string), efe_scores (dict of action to EFE score)
-            - best_action: The action with the lowest score for the current decision step.
+    def handle_wait_streak(self, best_action, efe_scores, safe_actions):
+        """
+        If WAIT is chosen 3 times in a row, pick an alternative action.
+        Input: 
+            - best_action: The action with the lowest score for the current decision step
+            - efe_scores: dict of action to EFE score
+            - safe_actions: list of collision-free actions
         Output: action string (potentially overridden)
         """
         if best_action == "WAIT":
             self.wait_streak += 1
             if self.wait_streak > 2:
-                if self.algo_mode != "random_walk":  # For random walk, we have to choose a random new action instead of the second-best
+                if self.algo_mode != "random_walk":  
                     sorted_actions = sorted(efe_scores, key=efe_scores.get)
                     second_best_action = sorted_actions[1]
                     self.get_logger().info("WAIT chosen > 2 times. Using second-best action.")
                     self.wait_streak = 0
                     return second_best_action
-                else: 
-                    available_actions = list(self.actions_dict.keys())
-                    available_actions.remove("WAIT")
-                    random_action = np.random.choice(available_actions)
-                    self.get_logger().info("WAIT chosen > 2 times in Random Walk. Choosing random action.")
-                    self.wait_streak = 0
-                    return random_action
+                else: # For random walk, we have to choose a random new action from the safe_actions list
+                    safe_alternatives = [a for a in safe_actions if a != "WAIT"]
+                
+                    if len(safe_alternatives) > 0:
+                        random_action = np.random.choice(safe_alternatives)
+                        self.get_logger().info(f"Random Walk: Choosing safe random action instead of WAIT: {random_action}")
+                        self.wait_streak = 0
+                        return random_action
+                    else:
+                        self.get_logger().warn("No safe alternatives to WAIT! Robot trapped.")
+                        return "WAIT"  # Keep WAIT if truly trapped
         else:
             self.wait_streak = 0
         
@@ -441,7 +498,7 @@ class ActiveInferenceController:
     
     def check_termination_conditions(self):
         """
-        Checks if the run should end due to convergence or timeout.
+        Checks if the run should end due to convergence, crash or timeout.
         Returns:
             str: 'WAIT' if a condition is met, otherwise None.
         """
@@ -451,7 +508,13 @@ class ActiveInferenceController:
             self.publish_status("SUCCESS: Convergence reached")
             return "WAIT"
 
-        # Check 2: Max Runtime
+        # Check 2: Crash 
+        if is_pose_in_collision(self.actual_real_position, self.map_metadata, self.dist_map):
+            self.get_logger().info(f"!!! COLLISION at {self.actual_real_position}")
+            self.publish_status("FAILURE: Collision")
+            return "WAIT"
+
+        # Check 3: Max Runtime
         if self.runtime_counter > self.max_runtime:
             self.get_logger().info(f"!!! MAX RUNTIME REACHED ({self.runtime_counter}) !!!")
             self.publish_status("FAILURE: Max runtime exceeded")
@@ -471,9 +534,7 @@ class ActiveInferenceController:
             return
 
         action_float = self.action_to_id.get(best_action, -1.0) if best_action is not None else -1.0
-        # Convert action string to float ID if necessary (or keep as string if your msg supports it)
         # Assuming you have a helper or mapping for action->float, otherwise -1.0
-        action_float = -1.0 
         # Example: action_float = self.action_to_id.get(best_action, -1.0)
 
         metrics_msg = Float32MultiArray()

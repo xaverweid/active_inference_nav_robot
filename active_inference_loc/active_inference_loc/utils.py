@@ -240,30 +240,39 @@ def get_proximity_risk(pose, map_metadata, safe_dist=0.5, robot_radius=0.18, sig
     return float(np.clip(risk, 0.0, 1.0))
 
 
-def is_pose_in_collision(pose, map_metadata, threshold=50, robot_radius=0.18):
+def is_pose_in_collision(pose, map_metadata, distance_map, robot_radius=0.18, safety_margin=0.05):
+    """
+    Check collision using precomputed distance map.
+    
+    Args:
+        pose: [x, y, yaw] in world coordinates
+        map_metadata: dict with resolution, origin_x, origin_y, width, height
+        distance_map: 2D array where each cell contains distance to nearest obstacle (in meters)
+        robot_radius: robot radius in meters
+        safety_margin: additional safety buffer in meters
+    
+    Returns:
+        True if in collision, False otherwise
+    """
     x, y = pose[0], pose[1]
     res = map_metadata['resolution']
     ox, oy = map_metadata['origin_x'], map_metadata['origin_y']
-    data = map_metadata['data']
     
-    steps = int(robot_radius / res)
+    # Convert to grid coordinates
     grid_x = int((x - ox) / res)
     grid_y = int((y - oy) / res)
     
-    for dx in range(-steps, steps + 1):
-        for dy in range(-steps, steps + 1):
-            curr_x = grid_x + dx
-            curr_y = grid_y + dy
-            
-            # Check bounds
-            if not (0 <= curr_x < map_metadata['width'] and 0 <= curr_y < map_metadata['height']):
-                return True  # Out of bounds = collision
-            
-            # Check obstacle
-            if data[curr_y, curr_x] >= threshold or data[curr_y, curr_x] == -1:
-                return True
+    # Check bounds
+    if not (0 <= grid_x < map_metadata['width'] and 0 <= grid_y < map_metadata['height']):
+        return True  # Out of bounds = collision
     
-    return False  # No collision detected
+    # Get distance to nearest obstacle at this position
+    distance_to_obstacle = distance_map[grid_y, grid_x]
+    
+    # Collision if distance is less than robot radius + safety margin
+    min_required_distance = robot_radius + safety_margin
+    
+    return distance_to_obstacle < min_required_distance
 
 def calculate_shannon_entropy(weights):
     """
