@@ -36,26 +36,17 @@ def predict_motion(pose_4d, action_type, action_dict, dt):
 
 # --- 2. Simplified Raycaster (Needs the map!) ---
 # You'll need the map as a 2D numpy array and its metadata (resolution, origin)
-def raycast_scan(poses_4d, map_2d, map_metadata, fov_deg=360, num_beams=8):
-    """
-    fov_deg: Set this to match your real LiDAR (e.g., 180 or 360)
-    num_beams: Number of rays to simulate per particle, can be 8 or 12/16 preferably
-    """
+def raycast_scan(poses_4d, dist_map, map_metadata, fov_deg=180, num_beams=8):
     res = map_metadata['resolution']
     ox = map_metadata['origin_x']
     oy = map_metadata['origin_y']
-    h, w = map_2d.shape
-
-    # Adjust angles based on FOV (centered at 0)
+    h, w = dist_map.shape
+    
     fov_rad = np.radians(fov_deg)
     angles = np.linspace(-fov_rad/2, fov_rad/2, num_beams, endpoint=False)
-    
-    max_range = 12.0 
-    # Start ray 2 pixels away to avoid self-collision with the current cell
-    start_offset = res * 2.0 
+    max_range = 12.0
     
     all_scans = []
-
     for p in poses_4d:
         x, y, cth, sth = p
         theta = np.arctan2(sth, cth)
@@ -66,37 +57,64 @@ def raycast_scan(poses_4d, map_2d, map_metadata, fov_deg=360, num_beams=8):
             dx_unit = np.cos(global_angle)
             dy_unit = np.sin(global_angle)
             
-            # Start slightly ahead of the center
-            curr_x = x + dx_unit * start_offset
-            curr_y = y + dy_unit * start_offset
-            
-            dist = start_offset
-            hit = False
-            
+            dist = 0.1 # Small start offset
             while dist < max_range:
+                curr_x = x + dx_unit * dist
+                curr_y = y + dy_unit * dist
+                
                 gx = int((curr_x - ox) / res)
                 gy = int((curr_y - oy) / res)
                 
                 if 0 <= gx < w and 0 <= gy < h:
-                    val = map_2d[gy, gx]
-                    if val > 50 or val == -1:
+                    # Look up the safe jump distance from your distance map
+                    safe_jump = dist_map[gy, gx]
+                    
+                    # If safe_jump is very small, we hit a wall
+                    if safe_jump < res: 
                         particle_ranges.append(dist)
-                        hit = True
                         break
+                        
+                    # LEAP forward by the safe distance
+                    dist += safe_jump
                 else:
-                    # Off map
                     particle_ranges.append(dist)
-                    hit = True
                     break
-                
-                # Step by resolution
-                curr_x += dx_unit * res
-                curr_y += dy_unit * res
-                dist += res
-            
-            if not hit:
+            else:
                 particle_ranges.append(max_range)
-        
         all_scans.append(particle_ranges)
-
     return np.array(all_scans)
+
+from numba import njit
+
+@njit
+def raycast_numba(poses_4d, dist_map, res, ox, oy, angles, max_range):
+    h, w = dist_map.shape
+    num_poses = poses_4d.shape[0]
+    num_beams = angles.shape[0]
+    
+    results = np.empty((num_poses, num_beams))
+
+    for i in range(num_poses):
+        x, y = poses_4d[i, 0], poses_4d[i, 1]
+        cth, sth = poses_4d[i, 2], poses_4d[i, 3]
+        theta = np.arctan2(sth, cth)
+        
+        for j in range(num_beams):
+            global_angle = theta + angles[j]
+            dx = np.cos(global_angle)
+            dy = np.sin(global_angle)
+            
+            dist = 0.1
+            while dist < max_range:
+                gx = int((x + dx * dist - ox) / res)
+                gy = int((y + dy * dist - oy) / res)
+                
+                if 0 <= gx < w and 0 <= gy < h:
+                    safe_jump = dist_map[gy, gx]
+                    if safe_jump < res:
+                        break
+                    dist += safe_jump
+                else:
+                    break
+            results[i, j] = dist
+    return results

@@ -16,11 +16,19 @@ setup(
          (os.path.join('share', package_name, 'launch'),
             glob('launch/*_launch.py')),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+            'setuptools',
+            'numpy',
+            'scipy',
+            'scikit-learn',
+            'matplotlib',
+            'transforms3d',
+            'numba',  
+    ],    
     zip_safe=True,
     maintainer='xaver',
     maintainer_email='fxweidinger@googlemail.com',
-    description='TODO: Package description',
+    description='Active Inference based localization for mobile robots',
     license='TODO: License declaration',
     extras_require={
         'test': [
@@ -31,7 +39,6 @@ setup(
         'console_scripts': [
             'aic_node=active_inference_loc.aic_node:main',
             'belief_monitor = active_inference_loc.belief_monitor_node:main',
-            'seeded_particle_initializer = active_inference_loc.seeded_particle_initializer:main',
         ],
     },
     

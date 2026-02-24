@@ -33,7 +33,7 @@ class AICNode(Node):
         self.get_logger().info(f"--- LAUNCHING AIC NODE IN MODE: {self.algorithm_mode}")
 
         self.time_delta = 1.0
-        self.recording_delay = 0.0
+        self.recording_delay = 5.0
         self.ticks_to_wait = int(self.recording_delay / self.time_delta)
         self.ticks_passed = 0
 
@@ -153,6 +153,7 @@ class AICNode(Node):
         """Main decision loop."""
         if self.ticks_passed < self.ticks_to_wait:
             self.ticks_passed += 1
+            self.get_logger().info(f"Control loop: Countdown at {self.ticks_to_wait - self.ticks_passed}")
             return
         
         if not self.map_ready:

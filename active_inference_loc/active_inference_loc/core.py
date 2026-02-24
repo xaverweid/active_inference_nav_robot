@@ -23,6 +23,7 @@ class ActiveInferenceController:
         self.clusturer = ParticleClusturer()
         self.time_delta = 1.0  
         self.map_2d = None
+        self.dist_map = None
         self.map_metadata = None
         self.current_particles = None
         self.current_weights = None
@@ -89,7 +90,8 @@ class ActiveInferenceController:
     def set_map(self, map_msg):
         self.map_metadata = get_map_metadata(map_msg)
         self.map_2d = self.map_metadata['data'] 
-        self.get_logger().info("Map updated successfully.")
+        self.dist_map = self.map_metadata['distance_map']
+        self.get_logger().info("Map (2D and dist_map) updated successfully.")
 
     def update_belief(self, points, weights, dt=1.0):
         """
@@ -201,9 +203,9 @@ class ActiveInferenceController:
         self.particle_data_pub.publish(msg)
             
     def is_ready(self):
-        map_ok = self.map_2d is not None
+        map_ok = self.map_2d is not None and self.dist_map is not None
         part_ok = self.current_particles is not None
-        if not map_ok: self.get_logger().debug("Controller NOT ready: Missing Map")
+        if not map_ok: self.get_logger().debug("Controller NOT ready: Missing Map / Distance Map")
         if not part_ok: self.get_logger().debug("Controller NOT ready: Missing Particles")
         return map_ok and part_ok
 
@@ -226,7 +228,7 @@ class ActiveInferenceController:
             self.publish_status(f"FAILURE: Unknown mode '{self.algo_mode}'")
             return "WAIT"
 
-    def _run_active_inference(self):  
+    def _run_active_inference(self, n_raycast_particles):  
         """Active Inference with expected free energy."""
         start_time = time.time()
 
@@ -287,6 +289,8 @@ class ActiveInferenceController:
         self.publish_metrics(best_action=best_action, efe_scores=efe_scores, best_detail=best_detail)
         
         total_time = time.time() - start_time
+        self.get_logger().warn(f"Total Time AIC Calculation (efe evaluation): {total_time:.2f}s")
+
         if total_time > self.time_delta:
             self.get_logger().warn(f"Slowdown: {total_time:.2f}s")
         
@@ -294,7 +298,7 @@ class ActiveInferenceController:
     
     def calculate_efe_epistemic(self, predicted_poses, rep_weights):
         """Calculate expected free energy for epistemic (information gain) value."""
-        pred_scans = raycast_scan(predicted_poses, self.map_2d, self.map_metadata)
+        pred_scans = raycast_scan(predicted_poses, self.dist_map, self.map_metadata)
 
         # Sanity checks / normalization
         rep_weights = np.asarray(rep_weights, dtype=np.float64)

@@ -3,9 +3,11 @@
 <package format="3">
   <name>active_inference_loc</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Active Inference based localization for mobile robots</description>
   <maintainer email="fxweidinger@googlemail.com">xaver</maintainer>
   <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
 
   <depend>rclpy</depend>
   <depend>diff_drive_robot</depend> 
@@ -14,12 +16,13 @@
   <depend>std_msgs</depend>
   <depend>nav2_msgs</depend>
   <depend>tf_transformations</depend>
-  <depend>python3-transforms3d</depend>
-
-  <depend>python3-numpy</depend>
-  <depend>python3-scipy</depend>
-  <depend>python3-sklearn</depend>
-  <depend>python3-matplotlib</depend>
+  
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-scipy</exec_depend>
+  <exec_depend>python3-sklearn</exec_depend>
+  <exec_depend>python3-matplotlib</exec_depend>
+  <exec_depend>python3-transforms3d</exec_depend>
+  <exec_depend>python3-numba</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
@@ -30,3 +33,4 @@
     <build_type>ament_python</build_type>
   </export>
 </package>
+
