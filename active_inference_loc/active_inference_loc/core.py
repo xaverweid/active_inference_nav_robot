@@ -492,21 +492,22 @@ class ActiveInferenceController:
     def update_belief_metrics(self):
         """
         Calculates and updates standard belief metrics (Entropy & Convergence).
+        Always computed from ALL particles for fair comparison
         Returns:
-            tuple: (representative_poses, rep_weights, rep_variances) for use by the algo.
+            tuple: (representative_poses, rep_weights) for use by the algo.
         """
         # 1. Shannon Entropy (Statistical Uncertainty)
         self.shannon_entropy = calculate_shannon_entropy(self.current_weights)
         self.spatial_entropy = calculate_spatial_entropy(self.current_particles, self.current_weights, self.spatial_entropy_res)
-
-        # 2. GMM Clustering (Spatial Uncertainty)
-        # We need these clusters for both convergence checking AND decision making
-        gmm_poses, gmm_weights, gmm_vars = self.clusturer.get_representative_clusters_from_gmm(
+        
+        # 2. Convergence Parameter (The "Stop" Condition)
+        self.convergence_parameter = calculate_convergence(self.current_particles, self.current_weights)
+        
+        # 3. GMM Clustering (Spatial Uncertainty)
+        # Clusters for decision making GMM
+        gmm_poses, gmm_weights = self.clusturer.get_representative_clusters_from_gmm(
             self.current_particles, self.current_weights
         )
-        
-        # 3. Convergence Parameter (The "Stop" Condition)
-        self.convergence_parameter = calculate_convergence(gmm_poses, gmm_weights, gmm_vars)
         
         return gmm_poses, gmm_weights
     

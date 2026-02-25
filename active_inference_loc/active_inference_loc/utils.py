@@ -285,44 +285,32 @@ def calculate_shannon_entropy(weights):
     
     return -np.sum(weights * np.log(weights))
 
-def calculate_convergence(representative_poses, rep_weights, cluster_variances):
+def calculate_convergence(particles, weights):
     """
-    Computes the total uncertainty of the GMM clusters.
+    Computes the total uncertainty of all the particles.
     Args:
-        representative_poses: (K, 4) array of cluster centers
-        rep_weights: (K,) array of weights
-        cluster_variances: (K, 2) array containing [var_x, var_y] for each cluster. 
-    Returns: value in meters (lower is more converged).
+        particles: (N, 4) array of particles
+        weights: (N,) array of weights
+    Returns: Standard deviation in meters (lower is more converged).
     """
-    if len(representative_poses) == 0:
+    if len(particles) == 0:
         return 100.0 # High uncertainty if no clusters
     
     # Enforce NumPy arrays
-    representative_poses = np.asarray(representative_poses)
-    rep_weights = np.asarray(rep_weights)
-    
+    particles = np.asarray(particles)
+    weights = np.asarray(weights)
+    weights = weights / (np.sum(weights) + 1e-12)
+
    # 1. Variance BETWEEN clusters
-    coords = representative_poses[:, :2]
-    weighted_mean = np.average(coords, axis=0, weights=rep_weights)
+    coords = particles[:, :2]
+    weighted_mean = np.average(coords, axis=0, weights=weights)
     sq_diff = (coords - weighted_mean)**2
-    variance_between_means = np.average(sq_diff, axis=0, weights=rep_weights)
-    
-    # 2. Variance WITHIN clusters (The "Internal Spread")
-    if cluster_variances is not None:
-        cluster_variances = np.asarray(cluster_variances) # Shape (K, 2)
-        variance_within_clusters = np.average(cluster_variances, axis=0, weights=rep_weights)
-    else:
-        variance_within_clusters = np.zeros(2) # Fallback if unknown
-        
-    # 3. Total Variance = Between + Within
-    total_var = variance_between_means + variance_within_clusters
+    variance_between_means = np.average(sq_diff, axis=0, weights=weights)
     
     # 4. Total Standard Deviation (Euclidean)
-    total_std = np.sqrt(np.sum(total_var))
+    total_std = np.sqrt(np.sum(variance_between_means))
     
     return float(total_std)
-
-import numpy as np
 
 def calculate_spatial_entropy(particles, weights, xy_resolution=0.2):
     """
