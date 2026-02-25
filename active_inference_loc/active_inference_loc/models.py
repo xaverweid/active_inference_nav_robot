@@ -38,7 +38,7 @@ def predict_motion(pose_4d, action_type, action_dict, dt):
 
 # --- 2. Simplified Raycaster (Needs the map!) ---
 # Based on distance map and its metadata (resolution, origin)
-def raycast_scan(poses_4d, dist_map, map_metadata, fov_deg=180, num_beams=8):
+def raycast_scan(poses_4d, dist_map, map_metadata, fov_deg=180, num_beams=16):
     res = map_metadata['resolution']
     ox = map_metadata['origin_x']
     oy = map_metadata['origin_y']
@@ -46,7 +46,7 @@ def raycast_scan(poses_4d, dist_map, map_metadata, fov_deg=180, num_beams=8):
     
     fov_rad = np.radians(fov_deg)
     angles = np.linspace(-fov_rad/2, fov_rad/2, num_beams, endpoint=False)
-    max_range = 12.0
+    max_range = 8.0 # needs to fit the lidar_gpu settings! /diff_drive_robot/urdf/lidar_gpu_180_sensor.xacro
     
     all_scans = []
     for p in poses_4d:
@@ -86,13 +86,20 @@ def raycast_scan(poses_4d, dist_map, map_metadata, fov_deg=180, num_beams=8):
         all_scans.append(particle_ranges)
     return np.array(all_scans)
 
-
-
 @njit
-def raycast_numba(poses_4d, dist_map, res, ox, oy, angles, max_range):
+def raycast_scan_numba(poses_4d, dist_map, res, ox, oy, fov_deg, num_beams, max_range, min_range, stddev):
+    """
+    Optimized Raycaster for Active Inference.
+    max_range: 8.0 (Budget limit)
+    min_range: 0.15 (Blind zone)
+    stddev: 0.025 (Simulates cheap sensor jitter)
+    """
     h, w = dist_map.shape
     num_poses = poses_4d.shape[0]
-    num_beams = angles.shape[0]
+    
+    # Pre-calculate angles based on FOV
+    fov_rad = np.deg2rad(fov_deg)
+    angles = np.linspace(-fov_rad/2, fov_rad/2, num_beams)
     
     results = np.empty((num_poses, num_beams))
 
@@ -106,19 +113,34 @@ def raycast_numba(poses_4d, dist_map, res, ox, oy, angles, max_range):
             dx = np.cos(global_angle)
             dy = np.sin(global_angle)
             
-            dist = 0.1
+            # Start at the edge of the 'blind zone'
+            dist = min_range
+            hit = False
+            
             while dist < max_range:
+                # Sphere tracing leap
                 gx = int((x + dx * dist - ox) / res)
                 gy = int((y + dy * dist - oy) / res)
                 
                 if 0 <= gx < w and 0 <= gy < h:
                     safe_jump = dist_map[gy, gx]
-                    if safe_jump < res:
+                    
+                    if safe_jump < res: # We hit a wall
+                        # Add Gaussian noise to the 'mental prediction' 
+                        # This reflects the agent's expectation of a noisy world
+                        noise = np.random.normal(0, stddev)
+                        results[i, j] = dist + noise
+                        hit = True
                         break
+                    
                     dist += safe_jump
                 else:
+                    # Off map behaves like max range or wall hit
+                    results[i, j] = dist
+                    hit = True
                     break
-            results[i, j] = dist
+            
+            if not hit:
+                results[i, j] = max_range
+                
     return results
-    
-    

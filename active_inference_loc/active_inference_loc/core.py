@@ -232,11 +232,11 @@ class ActiveInferenceController:
             self.publish_status(f"FAILURE: Unknown mode '{self.algo_mode}'")
             return "WAIT"
 
-    def _run_active_inference(self, use_gmm_comparison=True, n_raycast_particles=5, n_time_horizon=1, only_epistemic=False):  
+    def _run_active_inference(self, n_raycast_particles=5, n_time_horizon=1, only_epistemic=False):  
         """Active Inference with expected free energy.
         Input: 
-        - use_gmm_comparison: GMM clusterer or sampled particles
         - n_raycast_particles: Number of sampled particles (5, 50, 500) for epistemic. pragmatic always 500
+            - if == 5: use GMM, else use Importance Sampling
         - n_time_horizon: Number of time horizon into the future (1 or 3)
         - only_epistemic: if Yes, the pragmatic value is ignored, so 0 for each action
         """
@@ -254,16 +254,22 @@ class ActiveInferenceController:
         initial_weights = np.copy(self.current_weights)
         num_total_p = len(initial_particles)
 
-        #Epistemic
-        #TODO: 
+        # EPISTEMIC
         # check for n_raycast_particles to determine particle n and weights n for epistemic
-        # If GMM is yes, then n_raycast_particles is always 5, and we simply use the gmm_poses and gmm_weights from above
-        # If GMM is no, then we 
-        
-        initial_poses_gmm = np.copy(gmm_poses)
-        initial_weights_gmm = np.copy(gmm_weights)
+        # If n_raycast_particles is > 10, use Importance Sampling
+        # else GMM with gmm_poses and gmm_weights from above
+        sample_size_epistemic = min(num_total_p, n_raycast_particles)
+        if sample_size_epistemic > 10:
+            p_distribution = initial_weights / np.sum(initial_weights)
+            sample_indices_epistemic = np.random.choice(num_total_p, sample_size_epistemic, replace=True, p=p_distribution)
+            particles_epistemic = initial_particles[sample_indices_epistemic]
+            weights_epistemic = np.ones(sample_size_epistemic) / sample_size_epistemic
+        else:
+            particles_epistemic = np.copy(gmm_poses)
+            weights_epistemic = np.copy(gmm_weights)        
 
-        #Pragmatic
+        # PRAGMATIC
+        # Importance Sampling always with 500 (max) 
         sample_size_pragmatic = min(num_total_p, 500)
         sample_indices_pragmatic = np.random.choice(num_total_p, sample_size_pragmatic, replace=False)
         sample_particles_pragmatic = initial_particles[sample_indices_pragmatic]
@@ -279,8 +285,8 @@ class ActiveInferenceController:
         for action in self.actions_dict.keys():
             actual_duration = self.time_delta - 0.1
             
-            pred_clusters = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration) for p in initial_poses_gmm])
-            raw_epistemic = self.calculate_efe_epistemic(pred_clusters, initial_weights_gmm)
+            pred_clusters = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration) for p in particles_epistemic])
+            raw_epistemic = self.calculate_efe_epistemic(pred_clusters, weights_epistemic)
 
             if only_epistemic:
                 raw_pragmatic = 0.0
@@ -319,6 +325,7 @@ class ActiveInferenceController:
     
     def calculate_efe_epistemic(self, predicted_poses, rep_weights):
         """Calculate expected free energy for epistemic (information gain) value."""
+        #TODO: implement raycast_scan_numba with correct parameter values
         pred_scans = raycast_scan(predicted_poses, self.dist_map, self.map_metadata)
 
         # Sanity checks / normalization
