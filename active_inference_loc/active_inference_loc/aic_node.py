@@ -28,7 +28,7 @@ class AICNode(Node):
         super().__init__('aic_node')
 
         # Get parameters from via aic_launch.py
-        self.declare_parameter('algo_mode', 'entropy_min')
+        self.declare_parameter('algo_mode', 'active_inf')
         self.algorithm_mode = self.get_parameter('algo_mode').get_parameter_value().string_value
         self.get_logger().info(f"--- LAUNCHING AIC NODE IN MODE: {self.algorithm_mode}")
 

@@ -25,6 +25,7 @@ class ActiveInferenceController:
         self.map_2d = None
         self.dist_map = None
         self.map_metadata = None
+        self.fisher_map = None # used for D-optimality algo
         self.current_particles = None
         self.current_weights = None
         self.actions_dict = ACTION_EFFECTS
@@ -220,13 +221,16 @@ class ActiveInferenceController:
 
         if not self.is_ready():
             return None
-
         if self.algo_mode == "active_inf":
             return self._run_active_inference()
         elif self.algo_mode == "random_walk":
             return self._run_random_walk()
         elif self.algo_mode == "entropy_min":
             return self._run_entropy_min()
+        elif self.algo_mode == "d_opt_geometry":
+            return self._run_d_opt_geometry()
+        elif self.algo_mode == "d_opt_particle":
+            return self._run_d_opt_particle()
         else:
             self.get_logger().warn(f"Unknown mode '{self.algo_mode}'")
             self.publish_status(f"FAILURE: Unknown mode '{self.algo_mode}'")
@@ -375,7 +379,7 @@ class ActiveInferenceController:
     # Make sure to also implement the same requirements as in aic. 
     # Maximal runtime!
     
-    def _run_random_walk(self):
+    def _run_random_walk(self): #was tested, works
         """Random action selection."""
         start_time = time.time()
         
@@ -449,10 +453,185 @@ class ActiveInferenceController:
         
         return best_action
 
-    def _run_entropy_min(self):
+    def _run_entropy_min(self): # Tested, works
 
         return self._run_active_inference(only_epistemic=True)
+    
+    def _run_d_opt_geometry(self): # error all actions currently have same values
+        """D-Optimality: Maximize the Determinant of the FIM (Volume of Information) regarding the geometry of the map."""
+        return self._run_d_opt(mode='geometry')
 
+    def _run_d_opt_particle(self):
+        """D-Optimality: Maximize the Determinant of the FIM (Volume of Information) regarding the particles."""
+        return self._run_d_opt(mode='particle')
+    
+    def _get_fisher_map(self):
+        """Calculates the Fisher Information Map only once when needed."""
+        if self.fisher_map is None:
+            start = time.time()
+            self.get_logger().info("Calculating Fisher Information Map (D-Optimality)...")
+            
+            # Calculate gradients along both axes
+            # np.gradient returns a list: [grad_y, grad_x]
+            dy, dx = np.gradient(self.dist_map)
+            
+            # We use the magnitude of the gradient as a proxy for 'D-Optimality'
+            # High magnitude = near walls/corners (high information)
+            self.fisher_map = np.hypot(dx, dy)
+            
+            duration = time.time() - start
+            self.get_logger().info(f"Fisher Map initialized in {duration:.4f}s")
+            
+        return self.fisher_map
+    
+    def _run_d_opt(self, mode='geometry'):
+        #TODO: currently runs on the real pose, but should run on the particles, on all particles or gmm, but not on only 1
+        start_time = time.time()
+        
+        # --- PHASE 1: UPDATE BELIEF & CHECK STATUS ---
+        # We need the current particles to predict the future uncertainty
+        gmm_poses, gmm_weights = self.update_belief_metrics()
+        
+        termination_action = self.check_termination_conditions()
+        if termination_action:
+            return termination_action
+
+        # --- PHASE 2: ALGORITHM SPECIFIC LOGIC ---
+        initial_particles = np.copy(self.current_particles)
+        initial_weights = np.copy(self.current_weights)
+        available_actions = list(self.actions_dict.keys())
+        current_pose_3d = [self.actual_real_position[0], self.actual_real_position[1], self.actual_real_yaw]
+        
+        # Filter safe actions (Same logic as your Random Walk)
+        f_maps = self._get_fisher_maps
+        safe_actions = []
+        action_scores = {}
+        
+        for action in available_actions:
+            # Predict resulting pose for collision check
+            pose_4d = np.array([current_pose_3d[0], current_pose_3d[1], np.cos(current_pose_3d[2]), np.sin(current_pose_3d[2])])
+            pred_pose_4d = predict_motion(pose_4d, action, self.actions_dict, self.time_delta - 0.1)
+            pred_xyz = [pred_pose_4d[0], pred_pose_4d[1], np.arctan2(pred_pose_4d[3], pred_pose_4d[2])]
+
+            if not is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map, robot_radius=0.18, safety_margin=0.05):
+                safe_actions.append(action)
+                
+                px = int((pred_xyz[0] - self.map_metadata['origin_x']) / self.map_metadata['resolution'])
+                py = int((pred_xyz[1] - self.map_metadata['origin_y']) / self.map_metadata['resolution'])
+                # --- SCORING LOGIC ---
+             
+                try:
+                    if mode == 'geometry':
+                    # geometry based
+                        particle_set = initial_particles
+                        #TODO: make sure for the particle beliefs, not only for 1
+                        action_scores[action] = sum(self._get_fisher_info_det(particle for particle in particle_set))
+                
+                    else:
+                        # particle based
+                        # Propagate all particles through this action
+                        fisher_sum = np.zeros((3, 3))  # includes yaw
+
+                        for i, particle in enumerate(initial_particles):
+                            w = initial_weights[i]
+
+                            # Particle is [x, y, cos(yaw), sin(yaw)] — adjust if different
+                            pred_p = predict_motion(particle, action, self.actions_dict, self.time_delta - 0.1)
+                            pred_p_xyz = [pred_p[0], pred_p[1], np.arctan2(pred_p[3], pred_p[2])]
+
+                            # Get simulated scan from this predicted particle pose
+                            scan_ranges = raycast_scan(
+                                pred_p_xyz,
+                                self.map_metadata,
+                                self.occupancy_map,      # <-- adjust to your attribute name
+                                self.laser_params        # <-- adjust: angles, max_range, etc.
+                            )
+
+                            # Compute Fisher info from this scan (your existing per-pose method)
+                            F = self._compute_fisher_from_scan(pred_p_xyz, scan_ranges)  # shape (2,2) or (3,3)
+
+                            fisher_sum += w * F
+
+                        # Normalizing Fisher Matrix since yaw and meters scales differ
+                        # Use half map's approximate diameter as the scale
+                        map_width_m = self.map_metadata['width'] * self.map_metadata['resolution']
+                        map_height_m = self.map_metadata['height'] * self.map_metadata['resolution']
+                        yaw_scale = 0.5 * max(map_width_m, map_height_m)
+                        scale = np.array([1.0, 1.0, yaw_scale])
+                        S = np.diag(scale)
+                        fisher_scaled = S @ fisher_sum @ S  # symmetric scaling
+                        action_scores[action] = float(np.linalg.det(fisher_scaled))
+                       
+                except (IndexError, Exception) as e:
+                    self.get_logger().warn(f"Scoring failed for {action}: {e}")
+                    action_scores[action] = -1e9
+
+        self.get_logger().info(f"Full Scores of Actions are: /n {action_scores}")
+        
+        if not safe_actions:
+            self.get_logger().warn("No safe actions found! Waiting.")
+            return "WAIT"
+
+        # Select the action with the highest score
+        best_action = max(action_scores, key=action_scores.get)
+    
+        
+        # Prepare metrics for logging (matching AIC structure)
+        efe_scores = {a: action_scores.get(a, -1e9) for a in available_actions}
+        best_detail = {'epistemic': action_scores[best_action], 'pragmatic': 0.0}
+
+        # --- PHASE 3: FINALIZE & PUBLISH ---
+        best_action = self.handle_wait_streak(best_action, efe_scores, safe_actions=safe_actions)
+        self.get_logger().info(f"D-Optimality-{mode}: {best_action}")
+        
+         # Store for logging
+        self.runtime_counter += 1
+        self.chosen_action = best_action
+        self.last_raw_epistemic = best_detail['epistemic']
+        self.last_raw_pragmatic = best_detail['pragmatic']
+
+        self.publish_metrics(best_action, efe_scores, best_detail)
+        
+        total_time = time.time() - start_time
+        if total_time > self.time_delta:
+            self.get_logger().warn(f"Slowdown in {mode}-D-Opt: {total_time:.2f}s")
+            
+        return best_action
+
+    def _get_fisher_info_det(self, x, y):
+        # Ensure the map is calculated
+        f_map = self._get_fisher_map()
+        
+        # Convert world (meters) to map indices (pixels)
+        px = int((x - self.map_metadata['origin_x']) / self.map_metadata['resolution'])
+        py = int((y - self.map_metadata['origin_y']) / self.map_metadata['resolution'])
+
+        try:
+            # Direct lookup from the pre-calculated gradient map
+            return float(f_map[py, px])
+        except IndexError:
+            return 0.0
+    
+    def _compute_fisher_from_scan(self, pose_xyz, scan_ranges):
+        x, y, yaw = pose_xyz
+        F = np.zeros((3, 3))  # [x, y, yaw]
+
+        for k, r in enumerate(scan_ranges):
+            if r >= self.laser_max_range or r <= 0.0:
+                continue
+
+            beam_angle = yaw + self.laser_angles[k]
+
+            # Gradient of range w.r.t. [x, y, yaw]
+            dr_dx = -np.cos(beam_angle)
+            dr_dy = -np.sin(beam_angle)
+            dr_dyaw = r * np.sin(self.laser_angles[k])  # tangential component
+
+            grad = np.array([dr_dx, dr_dy, dr_dyaw])
+            F += np.outer(grad, grad)
+
+        return F
+    
     def handle_wait_streak(self, best_action, efe_scores, safe_actions):
         """
         If WAIT is chosen 3 times in a row, pick an alternative action.

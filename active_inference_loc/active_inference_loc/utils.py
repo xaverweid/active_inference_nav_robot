@@ -92,7 +92,7 @@ class ParticleClusturer:
 
         cluster_variances = np.column_stack((var_x, var_y))
 
-        return cluster_poses, cluster_weights, cluster_variances
+        return cluster_poses, cluster_weights
         
 # Utility Functions (non-class): generic ROS/map/geometry conversions
 
