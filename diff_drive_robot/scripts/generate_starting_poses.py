@@ -87,7 +87,7 @@ def is_valid_position(x, y, free_space, resolution, origin, min_clearance=0.25):
     
     return True
 
-def generate_valid_starting_poses(map_yaml_path, num_poses=50, min_clearance=0.25):
+def generate_valid_starting_poses(map_yaml_path, num_poses=1000, min_clearance=0.25):
     """
     Generate valid random starting poses with minimum wall clearance.
     
@@ -164,13 +164,13 @@ if __name__ == '__main__':
     csv_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
-        'starting_poses.csv'
+        'starting_poses_1000.csv'
     )
     
     # Generate poses with 0.25m clearance (15cm robot radius + 10cm safety)
     poses = generate_valid_starting_poses(
         map_yaml_path=map_yaml_path,
-        num_poses=100,
+        num_poses=1000,
         min_clearance=0.25
     )
     

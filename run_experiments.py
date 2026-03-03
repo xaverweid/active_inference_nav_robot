@@ -21,8 +21,7 @@ class ExperimentLogger(Node):
         self.trial_name = trial_name
         self.csv_file = open(f"{trial_name}.csv", mode='w')
         self.writer = csv.writer(self.csv_file)
-        # Header includes position error (from metrics[7]) and rotational error (from metrics[8])
-        self.writer.writerow(['step', 'position_error', 'rotational_error', 'shannon_entropy', 'spatial_entropy','convergence_gmm', 'epistemic', 'pragmatic', 'selected_action,'
+        self.writer.writerow(['step', 'position_error', 'rotational_error', 'shannon_entropy', 'spatial_entropy','convergence_gmm', 'epistemic', 'pragmatic', 'selected_action'
         'actual real x',
         'actual real y',
         'actual real yaw',
@@ -110,11 +109,11 @@ def run_benchmarking():
     poses_file_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
-        'starting_poses.csv'
+        'starting_poses_1000.csv' # 100 or 1000
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["active_inf", "random_walk", "entropy_min"]  
+    algos = ["active_inf"]#, "random_walk", "entropy_min"]  
     
     summary_f = open('summary_results.csv', mode='w')
     summary_writer = csv.writer(summary_f)
