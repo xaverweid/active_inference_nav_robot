@@ -10,6 +10,8 @@ from geometry_msgs.msg import PoseWithCovarianceStamped
 from nav_msgs.msg import Odometry
 from std_msgs.msg import String, Float32MultiArray
 import subprocess, signal, os, time, csv, numpy as np
+import os
+from datetime import datetime
 
 class ExperimentLogger(Node):
     """Subscribes to ROS topics and logs experiment data to CSV."""
@@ -21,7 +23,7 @@ class ExperimentLogger(Node):
         self.trial_name = trial_name
         self.csv_file = open(f"{trial_name}.csv", mode='w')
         self.writer = csv.writer(self.csv_file)
-        self.writer.writerow(['step', 'position_error', 'rotational_error', 'shannon_entropy', 'spatial_entropy','convergence_gmm', 'epistemic', 'pragmatic', 'selected_action'
+        self.writer.writerow(['step', 'position_error', 'rotational_error', 'shannon_entropy', 'spatial_entropy','convergence_gmm', 'epistemic', 'pragmatic', 'selected_action',
         'actual real x',
         'actual real y',
         'actual real yaw',
@@ -77,6 +79,22 @@ class ExperimentLogger(Node):
             self.current_step += 1
             self.csv_file.flush()
 
+def get_clean_env():
+    """
+    Filters LD_LIBRARY_PATH to prevent Gazebo from trying to load 
+    incompatible libraries from Snap folders.
+    """
+    env = os.environ.copy()
+    ld_path = env.get("LD_LIBRARY_PATH", "")
+    
+    if ld_path:
+        # Split the path, keep only parts that DON'T contain 'snap'
+        parts = ld_path.split(":")
+        cleaned_parts = [p for p in parts if "snap" not in p.lower()]
+        env["LD_LIBRARY_PATH"] = ":".join(cleaned_parts)
+        
+    return env
+
 def load_poses_from_csv(poses_file_path):
     poses = []
     with open(poses_file_path, mode='r') as f:
@@ -90,22 +108,31 @@ def load_poses_from_csv(poses_file_path):
     return poses
 
 def cleanup_processes(sim_proc, ctrl_proc):
-    """Kill all ROS processes cleanly."""
-    print("Cleaning up...")
+    """Kill all ROS and Gazebo processes aggressively."""
+    print("Cleaning up system processes...")
     try:
         os.killpg(os.getpgid(sim_proc.pid), signal.SIGTERM)
         os.killpg(os.getpgid(ctrl_proc.pid), signal.SIGTERM)
     except ProcessLookupError:
         pass
+
+    # Kill Gazebo and Ruby (the engine Jazzy uses)
+    # Using -f (full command) ensures we catch the right processes
+    subprocess.run(["pkill", "-9", "-f", "gz"], stderr=subprocess.DEVNULL)
+    subprocess.run(["pkill", "-9", "-f", "ruby"], stderr=subprocess.DEVNULL)
     
-    subprocess.run(["pkill", "-9", "gz-sim-server"], stderr=subprocess.DEVNULL)
-    subprocess.run(["pkill", "-9", "gz-sim-gui"], stderr=subprocess.DEVNULL)
+    # Refresh the ROS 2 graph
     subprocess.run(["ros2", "daemon", "stop"], stderr=subprocess.DEVNULL)
-    time.sleep(3)
+    subprocess.run(["ros2", "daemon", "start"], stderr=subprocess.DEVNULL)
+    
+    time.sleep(5)
+
+RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 def run_benchmarking():
     rclpy.init()
-    
+    clean_env = get_clean_env()
+    print("LD_LIBRARY_PATH:", os.environ.get("LD_LIBRARY_PATH"))
     poses_file_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
@@ -115,40 +142,42 @@ def run_benchmarking():
 
     algos = ["active_inf"]#, "random_walk", "entropy_min"]  
     
-    summary_f = open('summary_results.csv', mode='w')
+    summary_filename = f'summary_results_{RUN_TIMESTAMP}.csv'
+    summary_f = open(summary_filename, mode='w')
     summary_writer = csv.writer(summary_f)
     summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta'])
     
     for algo in algos:
-        for i, p in enumerate(poses):
-            trial_id = f"trial_{algo}_p{i}"
+        for i, p in enumerate(poses[:3]):
+
+            trial_id = f"trial_{algo}_p{i}_{RUN_TIMESTAMP}"
             print(f"\n{'='*60}")
             print(f">>> Starting {trial_id}")
             print(f"{'='*60}")
 
             logger = ExperimentLogger(trial_id)
 
-            # **FIXED: Launch robot first with position and map**
-            print(f"[1/3] Launching robot simulator at pose ({p['x']}, {p['y']}, {p['yaw']})...")
+            # [1/3] Launching robot simulator
+            print(f"[1/3] Launching robot simulator at pose ({p['x']}, {p['y']})...")
             sim_proc = subprocess.Popen([
                 "ros2", "launch", "diff_drive_robot", "robot_launch.py",
                 f"x_pose:={p['x']}", f"y_pose:={p['y']}", f"yaw_pose:={p['yaw']}"
-            ], preexec_fn=os.setsid)
+            ], preexec_fn=os.setsid, env=clean_env) # Pass clean_env here
             
             # Wait for simulator to fully initialize and AMCL to warm up
-            print("[2/3] Waiting 12 seconds for simulator and AMCL to initialize...")
+            print("[2/3] Waiting 12 seconds for initialization...")
             time.sleep(12)
             
-            # **FIXED: Launch AIC controller WITH algo_mode parameter**
+            # [3/3] Launching AIC controller
             print(f"[3/3] Launching AIC node in mode: {algo}")
             ctrl_proc = subprocess.Popen([
                 "ros2", "launch", "active_inference_loc", "aic_launch.py",
                 f"algo_mode:={algo}", f"spawn_x:={p['x']}", f"spawn_y:={p['y']}", f"spawn_yaw:={p['yaw']}"
-            ], preexec_fn=os.setsid)
+            ], preexec_fn=os.setsid, env=clean_env) # Pass clean_env here
             
             # Run trial with timeout
             start_t = time.time()
-            timeout = 300  # 5 minutes per trial
+            timeout = 120  # 2 minutes per trial
             while rclpy.ok() and not logger.finished:
                 rclpy.spin_once(logger, timeout_sec=0.1)
                 elapsed = time.time() - start_t
@@ -165,6 +194,7 @@ def run_benchmarking():
             summary_f.flush()
 
             logger.csv_file.close()
+            logger.destroy_node()
             cleanup_processes(sim_proc, ctrl_proc)
             
             print(f"✓ Finished {trial_id}: {logger.status} (steps={logger.current_step})")
@@ -174,7 +204,7 @@ def run_benchmarking():
     rclpy.shutdown()
     print(f"\n{'='*60}")
     print("✓ All experiments completed!")
-    print(f"Summary saved to: summary_results.csv")
+    print(f"Summary saved to: summary_results_{time.time}.csv")
     print(f"{'='*60}")
     
 if __name__ == '__main__':

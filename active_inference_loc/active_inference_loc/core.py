@@ -40,7 +40,7 @@ class ActiveInferenceController:
         self.shannon_entropy_norm = None
         self.effective_sample_size_percent = None
         self.runtime_counter = 0
-        self.max_runtime = 300
+        self.max_runtime = 120 # 2 Minutes max
         self.convergence_parameter = 100
         self.planning_sigma = 0.7   # A value between 0.5 and 1.0 is usually 'reasonable' for planning.
         self.spatial_entropy_res = 0.25 # 25cm bins

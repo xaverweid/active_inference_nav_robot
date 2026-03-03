@@ -97,7 +97,7 @@ def generate_valid_starting_poses(map_yaml_path, num_poses=1000, min_clearance=0
         min_clearance: Minimum distance from walls in meters (default: 0.25m)
     
     Returns:
-        List of tuples: [(x, y, theta), ...]
+        List of tuples: [(x, y, yaw), ...]
     """
     # Load map
     free_space, resolution, origin = load_map(map_yaml_path)
@@ -121,11 +121,11 @@ def generate_valid_starting_poses(map_yaml_path, num_poses=1000, min_clearance=0
         x, y = grid_to_world(grid_x, grid_y, resolution, origin)
         
         # Random orientation
-        theta = np.random.uniform(-np.pi, np.pi)
+        yaw = np.random.uniform(-np.pi, np.pi)
         
         # Validate position
         if is_valid_position(x, y, free_space, resolution, origin, min_clearance):
-            valid_poses.append((x, y, theta))
+            valid_poses.append((x, y, yaw))
             
             if len(valid_poses) % 10 == 0:
                 print(f"Generated {len(valid_poses)}/{num_poses} poses...")
@@ -146,9 +146,9 @@ def save_poses_to_csv(poses, csv_path):
     
     with open(csv_path, 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(['x', 'y', 'theta'])  # Header
-        for x, y, theta in poses:
-            writer.writerow([f'{x:.6f}', f'{y:.6f}', f'{theta:.6f}'])
+        writer.writerow(['x', 'y', 'yaw'])  # Header
+        for x, y, yaw in poses:
+            writer.writerow([f'{x:.6f}', f'{y:.6f}', f'{yaw:.6f}'])
     
     print(f"Saved {len(poses)} poses to {csv_path}")
 
@@ -179,5 +179,5 @@ if __name__ == '__main__':
     
     # Print sample poses
     print("\nSample poses:")
-    for i, (x, y, theta) in enumerate(poses[:5]):
-        print(f"Pose {i+1}: x={x:.3f}m, y={y:.3f}m, theta={theta:.3f}rad")
+    for i, (x, y, yaw) in enumerate(poses[:5]):
+        print(f"Pose {i+1}: x={x:.3f}m, y={y:.3f}m, yaw={yaw:.3f}rad")
