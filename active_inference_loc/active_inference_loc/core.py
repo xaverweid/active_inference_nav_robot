@@ -40,7 +40,7 @@ class ActiveInferenceController:
         self.shannon_entropy_norm = None
         self.effective_sample_size_percent = None
         self.runtime_counter = 0
-        self.max_runtime = 120 # 2 Minutes max
+        self.max_runtime = 300 # 5 Minutes max
         self.convergence_parameter = 100
         self.planning_sigma = 0.7   # A value between 0.5 and 1.0 is usually 'reasonable' for planning.
         self.spatial_entropy_res = 0.25 # 25cm bins
@@ -68,6 +68,8 @@ class ActiveInferenceController:
         self.chosen_action = None
         self.last_raw_epistemic = None
         self.last_raw_pragmatic = None
+        self.bimodal_score = None
+        self.is_bimodal = None
 
         self.action_to_id = {
             action: idx for idx, action in enumerate(self.actions_dict.keys())
@@ -198,10 +200,12 @@ class ActiveInferenceController:
             self.rotational_error = rotational_error
             
             # Logging
+            '''
             self.get_logger().info(f"Starting Position: {self.starting_pose[:2]}, Ground Truth Position: {self.ground_truth_pose[:2]}, Actual Real Position: {actual_real_position}")
             self.get_logger().info(f"Estimated Position: {self.estimated_position}, Actual Real Position: {actual_real_position}, Positional Error: {self.position_error:.2f}")
             self.get_logger().info(f"Starting Yaw: {self.starting_pose[2]:.2f}, Ground Truth Yaw: {self.ground_truth_pose[2]:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}")
             self.get_logger().info(f"Estimated Yaw (raw): {self.estimated_rotation:.2f}, Estimated Yaw (map frame): {self.estimated_rotation_map_frame:.2f}, Rotational Error: {self.rotational_error:.2f}")
+            '''
         else:
             self.get_logger().warn("Controller Error: Starting Pose or Ground Truth Pose not available")
         
@@ -282,6 +286,14 @@ class ActiveInferenceController:
         self.efe_particles = particles_epistemic
         self.efe_weights = weights_epistemic
         self.efe_variances = gmm_variances
+
+        #Bimodality sampling, for analysis of behavior in 2 hypotheses scenario (mainly works for GMM)
+        w_sorted = np.sort(weights_epistemic)[::-1]
+        top2_share = w_sorted[0] + w_sorted[1]   # how much mass in top 2
+        balance = 1 - abs(w_sorted[0] - w_sorted[1])  # 1.0 = perfectly balanced
+        self.bimodal_score = top2_share * balance  # high = two strong equal hypotheses
+        self.is_bimodal = (top2_share > 0.7) and (balance > 0.6)  # tunable thresholds
+
         # PRAGMATIC
         # Importance Sampling always with 500 (max) 
         sample_size_pragmatic = min(num_total_p, 500)
@@ -312,7 +324,7 @@ class ActiveInferenceController:
             total_efe = (self.alpha_epistemic * raw_epistemic) + (self.beta_pragmatic * raw_pragmatic)
             efe_scores[action] = total_efe
             details[action] = {'epistemic': self.alpha_epistemic * raw_epistemic, 'pragmatic': self.beta_pragmatic * raw_pragmatic}
-            self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {raw_epistemic:.2f}, Pragmatic: {raw_pragmatic:.2f})")
+            # self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {raw_epistemic:.2f}, Pragmatic: {raw_pragmatic:.2f})")
         
         best_action = min(efe_scores, key=efe_scores.get)
         best_detail = details[best_action]
@@ -330,7 +342,7 @@ class ActiveInferenceController:
         self.publish_metrics(best_action, efe_scores, best_detail)
         
         total_time = time.time() - start_time
-        self.get_logger().warn(f"Total Time AIC Calculation (efe evaluation): {total_time:.2f}s")
+        # self.get_logger().warn(f"Total Time AIC Calculation (efe evaluation): {total_time:.2f}s")
 
         if total_time > self.time_delta:
             self.get_logger().warn(f"Slowdown: {total_time:.2f}s")
@@ -424,8 +436,7 @@ class ActiveInferenceController:
                 ]
                 
                 # Check if predicted pose causes collision
-                if not is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map,
-                                            robot_radius=0.18, safety_margin=0.05):
+                if not is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
                     safe_actions.append(action)
             
             self.get_logger().info(f"Collision filter: {len(safe_actions)}/{len(available_actions)} safe")
@@ -519,7 +530,7 @@ class ActiveInferenceController:
             pred_pose_4d = predict_motion(pose_4d, action, self.actions_dict, self.time_delta - 0.1)
             pred_xyz = [pred_pose_4d[0], pred_pose_4d[1], np.arctan2(pred_pose_4d[3], pred_pose_4d[2])]
 
-            if not is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map, robot_radius=0.18, safety_margin=0.05):
+            if not is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
                 safe_actions.append(action)
                 
                 px = int((pred_xyz[0] - self.map_metadata['origin_x']) / self.map_metadata['resolution'])
@@ -775,8 +786,10 @@ class ActiveInferenceController:
             float(yaw_weighted_mean_efe_particles), #17
             float(std_x_weighted_efe_particles), #18
             float(std_y_weighted_efe_particles), #19
-         
+            float(self.bimodal_score), #20
+            float(self.is_bimodal) #21
         ]
+
         self.metrics_pub.publish(metrics_msg)
         
         # Optional: Unified Logging

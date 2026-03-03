@@ -12,6 +12,8 @@ from std_msgs.msg import String, Float32MultiArray
 import subprocess, signal, os, time, csv, numpy as np
 import os
 from datetime import datetime
+import signal
+import sys
 
 class ExperimentLogger(Node):
     """Subscribes to ROS topics and logs experiment data to CSV."""
@@ -32,6 +34,8 @@ class ExperimentLogger(Node):
         'yaw weighted mean cluster',
         'std x weighted',
         'std y weighted',
+        'bimodal_score',
+        'is_bimodal'
         ])
 
         self.metrics = None
@@ -75,6 +79,8 @@ class ExperimentLogger(Node):
                 self.metrics[17] if len(self.metrics) > 17 else -1.0,  # yaw weighted mean cluster
                 self.metrics[18] if len(self.metrics) > 18 else -1.0,  # std x weighted
                 self.metrics[19] if len(self.metrics) > 19 else -1.0,  # std y weighted
+                self.metrics[20] if len(self.metrics) > 20 else -1.0,  # bimodal score
+                self.metrics[21] if len(self.metrics) > 21 else -1.0,  # is bimodal (boolean)
             ])
             self.current_step += 1
             self.csv_file.flush()
@@ -127,12 +133,25 @@ def cleanup_processes(sim_proc, ctrl_proc):
     
     time.sleep(5)
 
+active_sim_proc = None
+active_ctrl_proc = None
+
+def handle_interrupt(sig, frame):
+    print("\n[INTERRUPTED] Ctrl+C caught — cleaning up...")
+    if active_sim_proc and active_ctrl_proc:
+        cleanup_processes(active_sim_proc, active_ctrl_proc)
+    rclpy.shutdown()
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, handle_interrupt)
+signal.signal(signal.SIGTERM, handle_interrupt)
+
 RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 def run_benchmarking():
+    global active_sim_proc, active_ctrl_proc
     rclpy.init()
     clean_env = get_clean_env()
-    print("LD_LIBRARY_PATH:", os.environ.get("LD_LIBRARY_PATH"))
     poses_file_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
@@ -148,7 +167,7 @@ def run_benchmarking():
     summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta'])
     
     for algo in algos:
-        for i, p in enumerate(poses[:3]):
+        for i, p in enumerate(poses[:1]):
 
             trial_id = f"trial_{algo}_p{i}_{RUN_TIMESTAMP}"
             print(f"\n{'='*60}")
@@ -163,7 +182,9 @@ def run_benchmarking():
                 "ros2", "launch", "diff_drive_robot", "robot_launch.py",
                 f"x_pose:={p['x']}", f"y_pose:={p['y']}", f"yaw_pose:={p['yaw']}"
             ], preexec_fn=os.setsid, env=clean_env) # Pass clean_env here
-            
+
+            active_sim_proc = sim_proc
+
             # Wait for simulator to fully initialize and AMCL to warm up
             print("[2/3] Waiting 12 seconds for initialization...")
             time.sleep(12)
@@ -171,13 +192,16 @@ def run_benchmarking():
             # [3/3] Launching AIC controller
             print(f"[3/3] Launching AIC node in mode: {algo}")
             ctrl_proc = subprocess.Popen([
-                "ros2", "launch", "active_inference_loc", "aic_launch.py",
+                "ros2", "launch", "active_inference_loc", "aic_launch.py", 
+                "enable_viz:=false", # disable Belief Monitor Node
                 f"algo_mode:={algo}", f"spawn_x:={p['x']}", f"spawn_y:={p['y']}", f"spawn_yaw:={p['yaw']}"
             ], preexec_fn=os.setsid, env=clean_env) # Pass clean_env here
             
+            active_ctrl_proc = ctrl_proc
+
             # Run trial with timeout
             start_t = time.time()
-            timeout = 120  # 2 minutes per trial
+            timeout = 300  # 5 minutes per trial
             while rclpy.ok() and not logger.finished:
                 rclpy.spin_once(logger, timeout_sec=0.1)
                 elapsed = time.time() - start_t
@@ -204,7 +228,7 @@ def run_benchmarking():
     rclpy.shutdown()
     print(f"\n{'='*60}")
     print("✓ All experiments completed!")
-    print(f"Summary saved to: summary_results_{time.time}.csv")
+    print(f"Summary saved to: summary_results_{RUN_TIMESTAMP}.csv")
     print(f"{'='*60}")
     
 if __name__ == '__main__':

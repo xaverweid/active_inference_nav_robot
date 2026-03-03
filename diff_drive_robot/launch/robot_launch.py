@@ -155,7 +155,8 @@ def generate_launch_description():
         # rviz2,
         rsp,
         gazebo_server,
-        gazebo_client,
+        # disable GUI for run_experiment experimental run script
+        # gazebo_client, 
         ros_gz_bridge,
         spawn_diff_bot,
         starting_pose_publisher,
