@@ -33,7 +33,6 @@ class ExperimentLogger(Node):
         'std y weighted',
         ])
 
-        self.cumulative_distance = 0.0
         self.metrics = None
         self.current_step = 0
         self.finished = False
