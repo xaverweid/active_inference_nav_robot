@@ -22,9 +22,17 @@ class ExperimentLogger(Node):
         self.csv_file = open(f"{trial_name}.csv", mode='w')
         self.writer = csv.writer(self.csv_file)
         # Header includes position error (from metrics[7]) and rotational error (from metrics[8])
-        self.writer.writerow(['step', 'position_error', 'rotational_error', 'shannon_entropy', 'spatial_entropy','convergence_gmm', 'epistemic', 'pragmatic', 'selected_action'])
+        self.writer.writerow(['step', 'position_error', 'rotational_error', 'shannon_entropy', 'spatial_entropy','convergence_gmm', 'epistemic', 'pragmatic', 'selected_action,'
+        'actual real x',
+        'actual real y',
+        'actual real yaw',
+        'x weighted mean cluster ',
+        'y weighted mean cluster ',
+        'yaw weighted mean cluster',
+        'std x weighted',
+        'std y weighted',
+        ])
 
-        # State
         self.cumulative_distance = 0.0
         self.metrics = None
         self.current_step = 0
@@ -58,7 +66,15 @@ class ExperimentLogger(Node):
                 self.metrics[6] if len(self.metrics) > 6 else -1.0,  # convergence gmm from AIC metrics
                 self.metrics[0] if len(self.metrics) > 0 else -1.0,  # epistemic
                 self.metrics[1] if len(self.metrics) > 1 else -1.0,  # pragmatic
-                self.metrics[11] if len(self.metrics) > 11 else -1.0  # selected action
+                self.metrics[11] if len(self.metrics) > 11 else -1.0,  # selected action
+                self.metrics[12] if len(self.metrics) > 12 else -1.0,  # actual real x
+                self.metrics[13] if len(self.metrics) > 13 else -1.0,  # actual real y
+                self.metrics[14] if len(self.metrics) > 14 else -1.0,  # actual real yaw
+                self.metrics[15] if len(self.metrics) > 15 else -1.0,  # x weighted mean cluster 
+                self.metrics[16] if len(self.metrics) > 16 else -1.0,  # y weighted mean cluster 
+                self.metrics[17] if len(self.metrics) > 17 else -1.0,  # yaw weighted mean cluster
+                self.metrics[18] if len(self.metrics) > 18 else -1.0,  # std x weighted
+                self.metrics[19] if len(self.metrics) > 19 else -1.0,  # std y weighted
             ])
             self.current_step += 1
             self.csv_file.flush()

@@ -130,7 +130,7 @@ class BeliefMonitorNode(Node):
             rotated_points[:, 3] = raw_points[:, 2]
 
             # Now that points are rotated, we cluster them
-            cluster_poses, cluster_weights = self.clusturer.get_representative_clusters_from_gmm(rotated_points, weights)
+            cluster_poses, cluster_weights, _ = self.clusturer.get_representative_clusters_from_gmm(rotated_points, weights)
             
             # 2. RENDERING LOGIC
             for artist in list(self.ax.collections) + list(self.ax.patches):

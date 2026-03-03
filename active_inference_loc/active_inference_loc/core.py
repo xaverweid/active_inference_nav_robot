@@ -27,7 +27,14 @@ class ActiveInferenceController:
         self.map_metadata = None
         self.fisher_map = None # used for D-optimality algo
         self.current_particles = None
+        
+        # Used for Data analysis
         self.current_weights = None
+        self.efe_particles = None
+        self.efe_weights = None
+        self.efe_variances = None
+
+
         self.actions_dict = ACTION_EFFECTS
         self.shannon_entropy = None
         self.shannon_entropy_norm = None
@@ -247,7 +254,7 @@ class ActiveInferenceController:
         start_time = time.time()
 
         # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
-        gmm_poses, gmm_weights = self.update_belief_metrics()
+        gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
         
         termination_action = self.check_termination_conditions()
         if termination_action:
@@ -272,6 +279,9 @@ class ActiveInferenceController:
             particles_epistemic = np.copy(gmm_poses)
             weights_epistemic = np.copy(gmm_weights)        
 
+        self.efe_particles = particles_epistemic
+        self.efe_weights = weights_epistemic
+        self.efe_variances = gmm_variances
         # PRAGMATIC
         # Importance Sampling always with 500 (max) 
         sample_size_pragmatic = min(num_total_p, 500)
@@ -375,16 +385,12 @@ class ActiveInferenceController:
         
         return total_risk * self.risk_penalty_factor
 
-    #TODO: Implement classical AML decision logic if needed. For now, they just return "WAIT" to let external nodes handle them.
-    # Make sure to also implement the same requirements as in aic. 
-    # Maximal runtime!
-    
     def _run_random_walk(self): #was tested, works
         """Random action selection."""
         start_time = time.time()
         
         # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
-        gmm_poses, gmm_weights = self.update_belief_metrics()
+        gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
         
         termination_action = self.check_termination_conditions()
         if termination_action:
@@ -484,13 +490,13 @@ class ActiveInferenceController:
             
         return self.fisher_map
     
-    def _run_d_opt(self, mode='geometry'):
-        #TODO: currently runs on the real pose, but should run on the particles, on all particles or gmm, but not on only 1
+    def _run_d_opt(self, mode='particle'):
+        #TODO: currently runs on the real pose, but should run on the particles, on all particles or gmm (same as run active inferece), but not on only 1
         start_time = time.time()
         
         # --- PHASE 1: UPDATE BELIEF & CHECK STATUS ---
         # We need the current particles to predict the future uncertainty
-        gmm_poses, gmm_weights = self.update_belief_metrics()
+        gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
         
         termination_action = self.check_termination_conditions()
         if termination_action:
@@ -684,11 +690,11 @@ class ActiveInferenceController:
         
         # 3. GMM Clustering (Spatial Uncertainty)
         # Clusters for decision making GMM
-        gmm_poses, gmm_weights = self.clusturer.get_representative_clusters_from_gmm(
+        gmm_poses, gmm_weights, gmm_variances = self.clusturer.get_representative_clusters_from_gmm(
             self.current_particles, self.current_weights
         )
         
-        return gmm_poses, gmm_weights
+        return gmm_poses, gmm_weights, gmm_variances
     
     def check_termination_conditions(self):
         """
@@ -728,8 +734,24 @@ class ActiveInferenceController:
             return
 
         action_float = self.action_to_id.get(best_action, -1.0) if best_action is not None else -1.0
-        # Assuming you have a helper or mapping for action->float, otherwise -1.0
-        # Example: action_float = self.action_to_id.get(best_action, -1.0)
+        
+        weights = self.efe_weights / (np.sum(self.efe_weights) + 1e-12)  # normalize
+        x_weighted_mean_efe_particles = float(np.sum(weights * self.efe_particles[:, 0]))
+        y_weighted_mean_efe_particles = float(np.sum(weights * self.efe_particles[:, 1]))
+        mean_cos = np.sum(weights * self.efe_particles[:, 2])
+        mean_sin = np.sum(weights * self.efe_particles[:, 3])
+        yaw_weighted_mean_efe_particles = float(np.arctan2(mean_sin, mean_cos))
+        # efe_variances shape (K, 2) -> [:, 0] = var_x, [:, 1] = var_y
+        # Law of total variance: internal cluster spread + between-cluster spread
+        std_x_weighted_efe_particles = float(np.sqrt(
+            np.sum(weights * self.efe_variances[:, 0]) +                                    # within-cluster
+            np.sum(weights * (self.efe_particles[:, 0] - x_weighted_mean_efe_particles)**2) # between-cluster
+        ))
+
+        std_y_weighted_efe_particles = float(np.sqrt(
+            np.sum(weights * self.efe_variances[:, 1]) +
+            np.sum(weights * (self.efe_particles[:, 1] - y_weighted_mean_efe_particles)**2)
+        ))
 
         metrics_msg = Float32MultiArray()
         metrics_msg.data = [
@@ -745,6 +767,15 @@ class ActiveInferenceController:
             float(self.shannon_entropy) if self.shannon_entropy is not None else -1.0, #9
             float(self.spatial_entropy) if self.spatial_entropy is not None else -1.0, #10
             action_float, #11
+            float(self.actual_real_position[0]), #12
+            float(self.actual_real_position[1]), #13
+            float(self.actual_real_yaw), #14
+            float(x_weighted_mean_efe_particles), #15
+            float(y_weighted_mean_efe_particles), #16
+            float(yaw_weighted_mean_efe_particles), #17
+            float(std_x_weighted_efe_particles), #18
+            float(std_y_weighted_efe_particles), #19
+         
         ]
         self.metrics_pub.publish(metrics_msg)
         
