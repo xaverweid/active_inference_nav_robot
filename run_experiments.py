@@ -81,6 +81,13 @@ class ExperimentLogger(Node):
                 self.metrics[19] if len(self.metrics) > 19 else -1.0,  # std y weighted
                 self.metrics[20] if len(self.metrics) > 20 else -1.0,  # bimodal score
                 self.metrics[21] if len(self.metrics) > 21 else -1.0,  # is bimodal (boolean)
+                self.metrics[22] if len(self.metrics) > 22 else -1.0,  # peak1_x
+                self.metrics[23] if len(self.metrics) > 23 else -1.0,  # peak1_y
+                self.metrics[24] if len(self.metrics) > 24 else -1.0,  # peak1_yaw
+                self.metrics[25] if len(self.metrics) > 25 else -1.0,  # peak2_x
+                self.metrics[26] if len(self.metrics) > 26 else -1.0,  # peak2_y
+                self.metrics[27] if len(self.metrics) > 27 else -1.0,  # peak2_yaw
+                self.metrics[28] if len(self.metrics) > 28 else -1.0,  # peak_distance
             ])
             self.current_step += 1
             self.csv_file.flush()
@@ -155,7 +162,7 @@ def run_benchmarking():
     poses_file_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
-        'starting_poses_1000.csv' # 100 or 1000
+        'starting_poses_1000.csv' # 1000 or 100
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
@@ -167,9 +174,9 @@ def run_benchmarking():
     summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta'])
     
     for algo in algos:
-        for i, p in enumerate(poses[:1]):
+        for i, p in enumerate(poses[:1000]):
 
-            trial_id = f"trial_{algo}_p{i}_{RUN_TIMESTAMP}"
+            trial_id = f"trial_{algo}_p{i+1:04d}_{RUN_TIMESTAMP}"
             print(f"\n{'='*60}")
             print(f">>> Starting {trial_id}")
             print(f"{'='*60}")
@@ -212,7 +219,7 @@ def run_benchmarking():
 
             # Calculate final metrics
                
-            summary_writer.writerow([algo, i, logger.status, logger.current_step, 
+            summary_writer.writerow([algo, i+1, logger.status, logger.current_step, 
                                      logger.metrics[3] if logger.metrics and len(logger.metrics) > 3 else -1.0,  # alpha
                                      logger.metrics[4] if logger.metrics and len(logger.metrics) > 4 else -1.0])  # beta
             summary_f.flush()

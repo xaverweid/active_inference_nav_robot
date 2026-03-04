@@ -33,6 +33,9 @@ class ActiveInferenceController:
         self.efe_particles = None
         self.efe_weights = None
         self.efe_variances = None
+        self.gmm_clusters = None
+        self.gmm_weights = None      
+
 
 
         self.actions_dict = ACTION_EFFECTS
@@ -47,7 +50,10 @@ class ActiveInferenceController:
 
         self.wait_streak = 0
         self.clock = None
+
         self.convergence_threshold = 0.20
+        self.bimodal_score_threshold = 0.3
+        self.success_counter = 0 # counts how many successes in localization (convergence and non bimodal) have happened, if 3 in a row the run ends with a Success
 
         # --- TUNABLE PARAMETERS ---
         self.alpha_epistemic = 1000.0 
@@ -281,18 +287,39 @@ class ActiveInferenceController:
             weights_epistemic = np.ones(sample_size_epistemic) / sample_size_epistemic
         else:
             particles_epistemic = np.copy(gmm_poses)
-            weights_epistemic = np.copy(gmm_weights)        
-
+            weights_epistemic = np.copy(gmm_weights)  
+           
         self.efe_particles = particles_epistemic
         self.efe_weights = weights_epistemic
         self.efe_variances = gmm_variances
 
         #Bimodality sampling, for analysis of behavior in 2 hypotheses scenario (mainly works for GMM)
-        w_sorted = np.sort(weights_epistemic)[::-1]
-        top2_share = w_sorted[0] + w_sorted[1]   # how much mass in top 2
-        balance = 1 - abs(w_sorted[0] - w_sorted[1])  # 1.0 = perfectly balanced
-        self.bimodal_score = top2_share * balance  # high = two strong equal hypotheses
-        self.is_bimodal = (top2_share > 0.7) and (balance > 0.6)  # tunable thresholds
+        # Use the original gmm clusters for Analysis isntead of particles that are used for algorithm
+        gmm_cluster_analysis = np.copy(self.gmm_clusters)
+        gmm_weights_analysis = np.copy(self.gmm_weights)
+        # 1. Get indices of the top 2 components
+        idx = np.argsort(gmm_weights_analysis)[::-1]
+        w0, w1 = gmm_weights_analysis[idx[0]], gmm_weights_analysis[idx[1]]
+        m0, m1 = gmm_cluster_analysis[idx[0]], gmm_cluster_analysis[idx[1]] 
+
+        # 2. Calculate Spatial Distance (Euclidean)
+        # We usually only care about X and Y for spatial bimodality
+        dist_xy = np.linalg.norm(m0[:2] - m1[:2])
+
+        # 3. Calculate Weight Metrics 
+        top2_share = w0 + w1
+        balance = 1 - abs(w0 - w1)
+
+        # 4. New: Spatial distinctness threshold 
+        # (e.g., 0.5 meters - if they are closer than this, it's just one "spot")
+        is_distinct = dist_xy > 0.5 
+
+        # 5. Final Score: Now factors in distance
+        # If distance is small, the bimodal_score will collapse toward zero
+        self.bimodal_score = top2_share * balance * (1.0 if is_distinct else 0.0)
+
+        # 6. Tunable Thresholds
+        self.is_bimodal = (top2_share > 0.7) and (balance > 0.6) and is_distinct
 
         # PRAGMATIC
         # Importance Sampling always with 500 (max) 
@@ -704,7 +731,9 @@ class ActiveInferenceController:
         gmm_poses, gmm_weights, gmm_variances = self.clusturer.get_representative_clusters_from_gmm(
             self.current_particles, self.current_weights
         )
-        
+        self.gmm_clusters = gmm_poses
+        self.gmm_weights = gmm_weights
+
         return gmm_poses, gmm_weights, gmm_variances
     
     def check_termination_conditions(self):
@@ -714,8 +743,14 @@ class ActiveInferenceController:
             str: 'WAIT' if a condition is met, otherwise None.
         """
         # Check 1: Convergence
-        if self.convergence_parameter < self.convergence_threshold:
-            self.get_logger().info(f"!!! CONVERGENCE REACHED ({self.convergence_parameter:.3f} < {self.convergence_threshold}) !!!")
+        if self.convergence_parameter < self.convergence_threshold and self.bimodal_score < self.bimodal_score_threshold:
+            self.success_counter +=1
+            self.get_logger().info(f"Convergence and Non-binomal achieved. Count: {self.success_counter}")
+        else:
+            self.success_counter = 0
+
+        if self.success_counter >= 3: # Must stay converged for 3 consecutive steps
+            self.get_logger().info( f"!!! SUCCESS: CONVERGENCE REACHED 3 times in a row!")
             self.publish_status("SUCCESS: Convergence reached")
             return "WAIT"
 
@@ -763,7 +798,30 @@ class ActiveInferenceController:
             np.sum(weights * self.efe_variances[:, 1]) +
             np.sum(weights * (self.efe_particles[:, 1] - y_weighted_mean_efe_particles)**2)
         ))
+        
+        # For Bimodality analysis, coordinates of the two strongest clusters
+        # 1. Get the sorted indices (highest weight first)
+        idx = np.argsort(self.gmm_weights)[::-1]
 
+        # 2. Extract the top two cluster vectors
+        # m0/m1 shape is [x, y, cos, sin]
+        m0 = self.gmm_clusters[idx[0]]
+        m1 = self.gmm_clusters[idx[1]] if len(idx) > 1 else m0
+
+        # --- PEAK 1 DATA ---
+        peak1_x = float(m0[0])
+        peak1_y = float(m0[1])
+        peak1_yaw = float(np.arctan2(m0[3], m0[2]))
+
+        # --- PEAK 2 DATA ---
+        peak2_x = float(m1[0])
+        peak2_y = float(m1[1])
+        peak2_yaw = float(np.arctan2(m1[3], m1[2]))
+
+        # --- PEAK DISTANCE ---
+        # Euclidean distance between (x, y) of both peaks
+        peak_distance = float(np.linalg.norm(m0[:2] - m1[:2]))
+        
         metrics_msg = Float32MultiArray()
         metrics_msg.data = [
             float(best_detail.get('epistemic', 0.0)), #0
@@ -787,7 +845,14 @@ class ActiveInferenceController:
             float(std_x_weighted_efe_particles), #18
             float(std_y_weighted_efe_particles), #19
             float(self.bimodal_score), #20
-            float(self.is_bimodal) #21
+            float(self.is_bimodal), #21
+            float(peak1_x), #22
+            float(peak1_y), #23
+            float(peak1_yaw), #24
+            float(peak2_x), #25
+            float(peak2_y), #26
+            float(peak2_yaw), #27
+            float(peak_distance), #28
         ]
 
         self.metrics_pub.publish(metrics_msg)
@@ -795,5 +860,5 @@ class ActiveInferenceController:
         # Optional: Unified Logging
         self.get_logger().info(
             f"Step {self.runtime_counter} | Action: {best_action} | "
-            f"Entropy: {self.shannon_entropy:.2f} | Conv: {self.convergence_parameter:.2f}"
+            f"Entropy: {self.shannon_entropy:.2f} | Conv: {self.convergence_parameter:.2f} | Bimodality: {self.bimodal_score:.2f}"
         )
