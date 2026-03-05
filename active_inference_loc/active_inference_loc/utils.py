@@ -348,3 +348,34 @@ def calculate_spatial_entropy(particles, weights, xy_resolution=0.2):
     spatial_entropy = -np.sum(p * np.log(p))
     
     return float(spatial_entropy)
+
+def calculate_bimodality(gmm_poses, gmm_weights):
+    if len(gmm_weights) < 2:
+        return 0.0, False
+    gmm_cluster_analysis = np.copy(gmm_poses)
+    gmm_weights_analysis = np.copy(gmm_weights)
+    # 1. Get indices of the top 2 components
+    idx = np.argsort(gmm_weights_analysis)[::-1]
+    w0, w1 = gmm_weights_analysis[idx[0]], gmm_weights_analysis[idx[1]]
+    m0, m1 = gmm_cluster_analysis[idx[0]], gmm_cluster_analysis[idx[1]] 
+
+    # 2. Calculate Spatial Distance (Euclidean)
+    # We usually only care about X and Y for spatial bimodality
+    dist_xy = np.linalg.norm(m0[:2] - m1[:2])
+
+    # 3. Calculate Weight Metrics 
+    top2_share = w0 + w1
+    balance = 1 - abs(w0 - w1)
+
+    # 4. New: Spatial distinctness threshold 
+    # (e.g., 0.5 meters - if they are closer than this, it's just one "spot")
+    is_distinct = dist_xy > 0.5 
+
+    # 5. Final Score: Now factors in distance
+    # If distance is small, the bimodal_score will collapse toward zero
+    bimodal_score = top2_share * balance * (1.0 if is_distinct else 0.0)
+
+    # 6. Tunable Thresholds
+    is_bimodal = (top2_share > 0.7) and (balance > 0.6) and is_distinct
+
+    return bimodal_score, is_bimodal

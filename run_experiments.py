@@ -166,7 +166,7 @@ def run_benchmarking():
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["active_inf"]#, "random_walk", "entropy_min"]  
+    algos = ["active_inf_5"]#, "active_inf_500", "random_walk", "entropy_min"]  
     
     summary_filename = f'summary_results_{RUN_TIMESTAMP}.csv'
     summary_f = open(summary_filename, mode='w')
@@ -174,7 +174,7 @@ def run_benchmarking():
     summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta'])
     
     for algo in algos:
-        for i, p in enumerate(poses[:1000]):
+        for i, p in enumerate(poses[969:1000], start=969):
 
             trial_id = f"trial_{algo}_p{i+1:04d}_{RUN_TIMESTAMP}"
             print(f"\n{'='*60}")

@@ -35,7 +35,7 @@ def predict_motion(pose_4d, action_type, action_dict, dt):
 
     return np.array([new_x, new_y, np.cos(new_theta), np.sin(new_theta)])
 
-
+'''
 # --- 2. Simplified Raycaster (Needs the map!) ---
 # Based on distance map and its metadata (resolution, origin)
 def raycast_scan(poses_4d, dist_map, map_metadata, fov_deg=180, num_beams=16):
@@ -85,13 +85,20 @@ def raycast_scan(poses_4d, dist_map, map_metadata, fov_deg=180, num_beams=16):
                 particle_ranges.append(max_range)
         all_scans.append(particle_ranges)
     return np.array(all_scans)
-
+'''
 @njit
-def raycast_scan_numba(poses_4d, dist_map, res, ox, oy, fov_deg, num_beams, max_range, min_range, stddev):
+def raycast_scan_numba(
+    poses_4d, dist_map, res, ox, oy, 
+    fov_deg=180.0,
+    num_beams=16,
+    max_range=8.0,
+    min_range=0.15,
+    stddev=0.025):
     """
     Optimized Raycaster for Active Inference.
-    max_range: 8.0 (Budget limit)
-    min_range: 0.15 (Blind zone)
+    # needs to fit the lidar_gpu settings! /diff_drive_robot/urdf/lidar_gpu_180_sensor.xacro
+    max_range: 8.0 (Budget limit) 
+    min_range: 0.15 (Blind zone) 
     stddev: 0.025 (Simulates cheap sensor jitter)
     """
     h, w = dist_map.shape

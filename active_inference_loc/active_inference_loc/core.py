@@ -2,8 +2,8 @@ import numpy as np
 import time
 from nav2_msgs.msg import Particle, ParticleCloud
 import scipy
-from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence, calculate_spatial_entropy, is_pose_in_collision
-from .models import predict_motion, raycast_scan
+from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence, calculate_spatial_entropy, is_pose_in_collision, calculate_bimodality
+from .models import predict_motion, raycast_scan_numba
 from std_msgs.msg import Float32MultiArray, String
 from geometry_msgs.msg import Pose, Quaternion, Point
 import math
@@ -27,16 +27,12 @@ class ActiveInferenceController:
         self.map_metadata = None
         self.fisher_map = None # used for D-optimality algo
         self.current_particles = None
-        
-        # Used for Data analysis
         self.current_weights = None
-        self.efe_particles = None
-        self.efe_weights = None
+
+        # Used for Data analysis
+        self.efe_epis_particles = None
+        self.efe_epis_weights = None
         self.efe_variances = None
-        self.gmm_clusters = None
-        self.gmm_weights = None      
-
-
 
         self.actions_dict = ACTION_EFFECTS
         self.shannon_entropy = None
@@ -238,12 +234,14 @@ class ActiveInferenceController:
 
         if not self.is_ready():
             return None
-        if self.algo_mode == "active_inf":
-            return self._run_active_inference()
+        if self.algo_mode == "active_inf_5":
+            return self._run_active_inference(n_raycast_particles=5)
+        elif self.algo_mode == "active_inf_500":
+            return self._run_active_inference(n_raycast_particles=500)
         elif self.algo_mode == "random_walk":
             return self._run_random_walk()
         elif self.algo_mode == "entropy_min":
-            return self._run_entropy_min()
+            return self._run_active_inference(n_raycast_particles=5, only_epistemic=True)
         elif self.algo_mode == "d_opt_geometry":
             return self._run_d_opt_geometry()
         elif self.algo_mode == "d_opt_particle":
@@ -253,7 +251,7 @@ class ActiveInferenceController:
             self.publish_status(f"FAILURE: Unknown mode '{self.algo_mode}'")
             return "WAIT"
 
-    def _run_active_inference(self, n_raycast_particles=5, n_time_horizon=1, only_epistemic=False):  
+    def _run_active_inference(self, n_raycast_particles=500, n_time_horizon=1, only_epistemic=False):  
         """Active Inference with expected free energy.
         Input: 
         - n_raycast_particles: Number of sampled particles (5, 50, 500) for epistemic. pragmatic always 500
@@ -266,10 +264,13 @@ class ActiveInferenceController:
         # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
         gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
         
+        # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
+        self.bimodal_score, self.is_bimodal = calculate_bimodality(gmm_poses, gmm_weights)
+        
         termination_action = self.check_termination_conditions()
         if termination_action:
             return termination_action
-        
+    
         # --- PHASE 2: ALGORITHM SPECIFIC LOGIC ---
         initial_particles = np.copy(self.current_particles)
         initial_weights = np.copy(self.current_weights)
@@ -285,41 +286,18 @@ class ActiveInferenceController:
             sample_indices_epistemic = np.random.choice(num_total_p, sample_size_epistemic, replace=True, p=p_distribution)
             particles_epistemic = initial_particles[sample_indices_epistemic]
             weights_epistemic = np.ones(sample_size_epistemic) / sample_size_epistemic
+            
         else:
             particles_epistemic = np.copy(gmm_poses)
             weights_epistemic = np.copy(gmm_weights)  
            
-        self.efe_particles = particles_epistemic
-        self.efe_weights = weights_epistemic
+        if len(particles_epistemic)!=len(weights_epistemic):
+            self.get_logger().warn("Particles and Weights not same length! Skipping this run by choosing WAIT action")
+            return "WAIT"
+        
+        self.efe_epis_particles = particles_epistemic
+        self.efe_epis_weights = weights_epistemic
         self.efe_variances = gmm_variances
-
-        #Bimodality sampling, for analysis of behavior in 2 hypotheses scenario (mainly works for GMM)
-        # Use the original gmm clusters for Analysis isntead of particles that are used for algorithm
-        gmm_cluster_analysis = np.copy(self.gmm_clusters)
-        gmm_weights_analysis = np.copy(self.gmm_weights)
-        # 1. Get indices of the top 2 components
-        idx = np.argsort(gmm_weights_analysis)[::-1]
-        w0, w1 = gmm_weights_analysis[idx[0]], gmm_weights_analysis[idx[1]]
-        m0, m1 = gmm_cluster_analysis[idx[0]], gmm_cluster_analysis[idx[1]] 
-
-        # 2. Calculate Spatial Distance (Euclidean)
-        # We usually only care about X and Y for spatial bimodality
-        dist_xy = np.linalg.norm(m0[:2] - m1[:2])
-
-        # 3. Calculate Weight Metrics 
-        top2_share = w0 + w1
-        balance = 1 - abs(w0 - w1)
-
-        # 4. New: Spatial distinctness threshold 
-        # (e.g., 0.5 meters - if they are closer than this, it's just one "spot")
-        is_distinct = dist_xy > 0.5 
-
-        # 5. Final Score: Now factors in distance
-        # If distance is small, the bimodal_score will collapse toward zero
-        self.bimodal_score = top2_share * balance * (1.0 if is_distinct else 0.0)
-
-        # 6. Tunable Thresholds
-        self.is_bimodal = (top2_share > 0.7) and (balance > 0.6) and is_distinct
 
         # PRAGMATIC
         # Importance Sampling always with 500 (max) 
@@ -366,7 +344,7 @@ class ActiveInferenceController:
         self.last_raw_epistemic = best_detail['epistemic']
         self.last_raw_pragmatic = best_detail['pragmatic']
 
-        self.publish_metrics(best_action, efe_scores, best_detail)
+        self.publish_metrics(best_action, efe_scores, best_detail, gmm_poses, gmm_weights)
         
         total_time = time.time() - start_time
         # self.get_logger().warn(f"Total Time AIC Calculation (efe evaluation): {total_time:.2f}s")
@@ -378,8 +356,17 @@ class ActiveInferenceController:
     
     def calculate_efe_epistemic(self, predicted_poses, rep_weights):
         """Calculate expected free energy for epistemic (information gain) value."""
-        #TODO: implement raycast_scan_numba with correct parameter values
-        pred_scans = raycast_scan(predicted_poses, self.dist_map, self.map_metadata)
+        # 1. Extract metadata for the Numba function
+        res = float(self.map_metadata['resolution'])
+        ox = float(self.map_metadata['origin_x'])
+        oy = float(self.map_metadata['origin_y'])
+        pred_scans = raycast_scan_numba(
+            poses_4d=np.asarray(predicted_poses, dtype=np.float64),
+            dist_map=self.dist_map,
+            res=res,
+            ox=ox,
+            oy=oy,
+        )
 
         # Sanity checks / normalization
         rep_weights = np.asarray(rep_weights, dtype=np.float64)
@@ -430,6 +417,9 @@ class ActiveInferenceController:
         
         # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
         gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
+        
+        # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
+        self.bimodal_score, self.is_bimodal = calculate_bimodality(gmm_poses, gmm_weights)
         
         termination_action = self.check_termination_conditions()
         if termination_action:
@@ -489,17 +479,13 @@ class ActiveInferenceController:
         self.last_raw_epistemic = best_detail['epistemic']
         self.last_raw_pragmatic = best_detail['pragmatic']
 
-        self.publish_metrics(best_action, efe_scores, best_detail)
+        self.publish_metrics(best_action, efe_scores, best_detail, gmm_poses, gmm_weights)
         
         total_time = time.time() - start_time
         if total_time > self.time_delta:
             self.get_logger().warn(f"Slowdown in Random Walk: {total_time:.2f}s")
         
         return best_action
-
-    def _run_entropy_min(self): # Tested, works
-
-        return self._run_active_inference(only_epistemic=True)
     
     def _run_d_opt_geometry(self): # error all actions currently have same values
         """D-Optimality: Maximize the Determinant of the FIM (Volume of Information) regarding the geometry of the map."""
@@ -532,14 +518,16 @@ class ActiveInferenceController:
         #TODO: currently runs on the real pose, but should run on the particles, on all particles or gmm (same as run active inferece), but not on only 1
         start_time = time.time()
         
-        # --- PHASE 1: UPDATE BELIEF & CHECK STATUS ---
-        # We need the current particles to predict the future uncertainty
+        # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
         gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
+        
+        # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
+        self.bimodal_score, self.is_bimodal = calculate_bimodality(gmm_poses, gmm_weights)
         
         termination_action = self.check_termination_conditions()
         if termination_action:
             return termination_action
-
+        
         # --- PHASE 2: ALGORITHM SPECIFIC LOGIC ---
         initial_particles = np.copy(self.current_particles)
         initial_weights = np.copy(self.current_weights)
@@ -582,17 +570,21 @@ class ActiveInferenceController:
                             # Particle is [x, y, cos(yaw), sin(yaw)] — adjust if different
                             pred_p = predict_motion(particle, action, self.actions_dict, self.time_delta - 0.1)
                             pred_p_xyz = [pred_p[0], pred_p[1], np.arctan2(pred_p[3], pred_p[2])]
-
-                            # Get simulated scan from this predicted particle pose
-                            scan_ranges = raycast_scan(
-                                pred_p_xyz,
-                                self.map_metadata,
-                                self.occupancy_map,      # <-- adjust to your attribute name
-                                self.laser_params        # <-- adjust: angles, max_range, etc.
-                            )
+                            # TODO: Incorporated the raycast scan numba, check if logic works for d_opt
+                            # Keep in mind that here i do it per particle, but raycast scan actually takes a set of particles
+                            res = float(self.map_metadata['resolution'])
+                            ox = float(self.map_metadata['origin_x'])
+                            oy = float(self.map_metadata['origin_y'])
+                            pred_scans = raycast_scan_numba(
+                                poses_4d=np.asarray(pred_p_xyz, dtype=np.float64),
+                                dist_map=self.dist_map,
+                                res=res,
+                                ox=ox,
+                                oy=oy,
+                            )                            
 
                             # Compute Fisher info from this scan (your existing per-pose method)
-                            F = self._compute_fisher_from_scan(pred_p_xyz, scan_ranges)  # shape (2,2) or (3,3)
+                            F = self._compute_fisher_from_scan(pred_p_xyz, pred_scans)  # shape (2,2) or (3,3)
 
                             fisher_sum += w * F
 
@@ -634,7 +626,7 @@ class ActiveInferenceController:
         self.last_raw_epistemic = best_detail['epistemic']
         self.last_raw_pragmatic = best_detail['pragmatic']
 
-        self.publish_metrics(best_action, efe_scores, best_detail)
+        self.publish_metrics(best_action, efe_scores, best_detail, gmm_poses, gmm_weights)
         
         total_time = time.time() - start_time
         if total_time > self.time_delta:
@@ -731,8 +723,6 @@ class ActiveInferenceController:
         gmm_poses, gmm_weights, gmm_variances = self.clusturer.get_representative_clusters_from_gmm(
             self.current_particles, self.current_weights
         )
-        self.gmm_clusters = gmm_poses
-        self.gmm_weights = gmm_weights
 
         return gmm_poses, gmm_weights, gmm_variances
     
@@ -768,45 +758,45 @@ class ActiveInferenceController:
             
         return None
     
-    def publish_metrics(self, best_action, efe_scores, best_detail):
+    def publish_metrics(self, best_action, efe_scores, best_detail, gmm_poses, gmm_weights):
         """
         Publishes all standard metrics to the ROS topic.
         Args:
             best_action (str): The selected action key.
             efe_scores (dict): Dictionary of scores (or placeholders).
             best_detail (dict): {'epistemic': float, 'pragmatic': float}.
+            gmm_poses and gmm_weights: coming from the gmm (5) for bimodality analysis
         """
         if self.metrics_pub is None:
             return
 
         action_float = self.action_to_id.get(best_action, -1.0) if best_action is not None else -1.0
         
-        weights = self.efe_weights / (np.sum(self.efe_weights) + 1e-12)  # normalize
-        x_weighted_mean_efe_particles = float(np.sum(weights * self.efe_particles[:, 0]))
-        y_weighted_mean_efe_particles = float(np.sum(weights * self.efe_particles[:, 1]))
-        mean_cos = np.sum(weights * self.efe_particles[:, 2])
-        mean_sin = np.sum(weights * self.efe_particles[:, 3])
-        yaw_weighted_mean_efe_particles = float(np.arctan2(mean_sin, mean_cos))
-        # efe_variances shape (K, 2) -> [:, 0] = var_x, [:, 1] = var_y
-        # Law of total variance: internal cluster spread + between-cluster spread
-        std_x_weighted_efe_particles = float(np.sqrt(
-            np.sum(weights * self.efe_variances[:, 0]) +                                    # within-cluster
-            np.sum(weights * (self.efe_particles[:, 0] - x_weighted_mean_efe_particles)**2) # between-cluster
-        ))
+        gmm_weights = gmm_weights / (np.sum(gmm_weights) + 1e-12)
 
+        x_weighted_mean_efe_particles = float(np.sum(gmm_weights * gmm_poses[:, 0]))
+        y_weighted_mean_efe_particles = float(np.sum(gmm_weights * gmm_poses[:, 1]))
+        mean_cos = np.sum(gmm_weights * gmm_poses[:, 2])
+        mean_sin = np.sum(gmm_weights * gmm_poses[:, 3])
+        yaw_weighted_mean_efe_particles = float(np.arctan2(mean_sin, mean_cos))
+
+        std_x_weighted_efe_particles = float(np.sqrt(
+            np.sum(gmm_weights * self.efe_variances[:, 0]) +
+            np.sum(gmm_weights * (gmm_poses[:, 0] - x_weighted_mean_efe_particles)**2)
+        ))
         std_y_weighted_efe_particles = float(np.sqrt(
-            np.sum(weights * self.efe_variances[:, 1]) +
-            np.sum(weights * (self.efe_particles[:, 1] - y_weighted_mean_efe_particles)**2)
+            np.sum(gmm_weights * self.efe_variances[:, 1]) +
+            np.sum(gmm_weights * (gmm_poses[:, 1] - y_weighted_mean_efe_particles)**2)
         ))
         
         # For Bimodality analysis, coordinates of the two strongest clusters
         # 1. Get the sorted indices (highest weight first)
-        idx = np.argsort(self.gmm_weights)[::-1]
+        idx = np.argsort(gmm_weights)[::-1]
 
         # 2. Extract the top two cluster vectors
         # m0/m1 shape is [x, y, cos, sin]
-        m0 = self.gmm_clusters[idx[0]]
-        m1 = self.gmm_clusters[idx[1]] if len(idx) > 1 else m0
+        m0 = gmm_poses[idx[0]]
+        m1 = gmm_poses[idx[1]] if len(idx) > 1 else m0
 
         # --- PEAK 1 DATA ---
         peak1_x = float(m0[0])

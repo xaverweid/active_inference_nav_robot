@@ -12,7 +12,7 @@
       <ray>
         <scan>
           <horizontal>
-          <!-- if you adapt here make sure to also update the number of beams in the active_inference_loc/models.py -->
+          <!-- if you adapt here make sure to also update the number of beams in the active_inference_loc/models/raycast_scan_numba function -->
             <samples>180</samples>
             <min_angle>-1.57</min_angle>   <!-- -90° -->
             <max_angle> 1.57</max_angle>   <!-- +90° -->
