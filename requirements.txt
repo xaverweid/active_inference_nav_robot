@@ -20,5 +20,6 @@ threadpoolctl==3.6.0
 transformations==2025.8.1
 setuptools==80.9.0
 wheel==0.45.1
+pandas==3.0.1
 
 

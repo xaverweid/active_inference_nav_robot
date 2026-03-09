@@ -14,6 +14,7 @@ class ActiveInferenceController:
     Handles decision logic for all control modes.
     """
     
+    
     def __init__(self, logger, algo_mode):
         self.logger = logger
         self.algo_mode = algo_mode
@@ -281,7 +282,6 @@ class ActiveInferenceController:
         # If n_raycast_particles is > 10, use Importance Sampling
         # else GMM with gmm_poses and gmm_weights from above
         sample_size_epistemic = min(num_total_p, n_raycast_particles)
-
         if sample_size_epistemic > 10:
             p_distribution = initial_weights / np.sum(initial_weights)
             sample_indices_epistemic = np.random.choice(num_total_p, sample_size_epistemic, replace=True, p=p_distribution)
