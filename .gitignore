@@ -6,3 +6,4 @@ __pycache__/
 *.pyc
 frame*
 expanded_urdf/
+*.egg-info/

@@ -35,7 +35,10 @@ class ExperimentLogger(Node):
         'std x weighted',
         'std y weighted',
         'bimodal_score',
-        'is_bimodal'
+        'is_bimodal', 
+        'peak1_x', 'peak1_y', 'peak1_yaw',
+        'peak2_x', 'peak2_y', 'peak2_yaw',
+        'peak_distance'
         ])
 
         self.metrics = None
