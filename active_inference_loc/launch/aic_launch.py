@@ -21,7 +21,7 @@ def generate_launch_description():
     
     algo_mode_arg = DeclareLaunchArgument(
         'algo_mode',
-        default_value='active_inf_5',
+        default_value='active_inf_500',
         description='Algorithm mode: active_inf_5, active_inf_500, random_walk, entropy_min, d_opt_geometry, d_opt_particle'
     )
     
