@@ -38,7 +38,7 @@ class ExperimentLogger(Node):
         'is_bimodal', 
         'peak1_x', 'peak1_y', 'peak1_yaw',
         'peak2_x', 'peak2_y', 'peak2_yaw',
-        'peak_distance'
+        'peak_distance',
         ])
 
         self.metrics = None
@@ -91,6 +91,7 @@ class ExperimentLogger(Node):
                 self.metrics[26] if len(self.metrics) > 26 else -1.0,  # peak2_y
                 self.metrics[27] if len(self.metrics) > 27 else -1.0,  # peak2_yaw
                 self.metrics[28] if len(self.metrics) > 28 else -1.0,  # peak_distance
+
             ])
             self.current_step += 1
             self.csv_file.flush()
@@ -169,15 +170,16 @@ def run_benchmarking():
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["active_inf_500"]#, "active_inf_500", "random_walk", "entropy_min"]  
+    algos = ["active_inf_5"]#, "active_inf_500", "random_walk", "entropy_min"]  
     
     summary_filename = f'summary_results_{RUN_TIMESTAMP}.csv'
     summary_f = open(summary_filename, mode='w')
     summary_writer = csv.writer(summary_f)
-    summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta'])
+    summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta', 
+                             'convergence_threshold', 'bimodal_score_threshold','planning_sigma','spatial_entropy_res',])
     
     for algo in algos:
-        for i, p in enumerate(poses[0:1000], start=0):
+        for i, p in enumerate(poses[0:2], start=0):
 
             trial_id = f"trial_{algo}_p{i+1:04d}_{RUN_TIMESTAMP}"
             print(f"\n{'='*60}")
@@ -224,7 +226,12 @@ def run_benchmarking():
                
             summary_writer.writerow([algo, i+1, logger.status, logger.current_step, 
                                      logger.metrics[3] if logger.metrics and len(logger.metrics) > 3 else -1.0,  # alpha
-                                     logger.metrics[4] if logger.metrics and len(logger.metrics) > 4 else -1.0])  # beta
+                                     logger.metrics[4] if logger.metrics and len(logger.metrics) > 4 else -1.0,  # beta
+                                     logger.metrics[29] if logger.metrics and len(logger.metrics) > 29 else -1.0, # convergence_threshold            
+                                     logger.metrics[30] if logger.metrics and len(logger.metrics) > 30 else -1.0, # bimodal_score_threshold       
+                                     logger.metrics[31] if logger.metrics and len(logger.metrics) > 31 else -1.0, # planning_sigma           
+                                     logger.metrics[32] if logger.metrics and len(logger.metrics) > 32 else -1.0, # spatial_entropy_res
+            ])
             summary_f.flush()
 
             logger.csv_file.close()
