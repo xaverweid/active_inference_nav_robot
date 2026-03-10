@@ -233,6 +233,8 @@ class ActiveInferenceController:
             return self._run_active_inference(n_raycast_particles=5)
         elif self.algo_mode == "active_inf_500":
             return self._run_active_inference(n_raycast_particles=500)
+        elif self.algo_mode == "active_inf_5_h3":
+            return self._run_active_inference(n_raycast_particles=5, n_time_horizon=3)
         elif self.algo_mode == "random_walk":
             return self._run_random_walk()
         elif self.algo_mode == "entropy_min":
@@ -296,7 +298,10 @@ class ActiveInferenceController:
 
         # PRAGMATIC
         # Importance Sampling always with 500 (max) 
-        sample_size_pragmatic = min(num_total_p, 500)
+        if n_time_horizon == 1:
+            sample_size_pragmatic = min(num_total_p, 500)
+        else:
+            sample_size_pragmatic = min(num_total_p, 50)
         sample_indices_pragmatic = np.random.choice(num_total_p, sample_size_pragmatic, replace=False)
         sample_particles_pragmatic = initial_particles[sample_indices_pragmatic]
         sample_weights_pragmatic = initial_weights[sample_indices_pragmatic]
@@ -304,34 +309,103 @@ class ActiveInferenceController:
         initial_poses_pragmatic = np.copy(sample_particles_pragmatic)
         initial_weights_pragmatic = np.copy(sample_weights_pragmatic)
 
-        #Loop
-        efe_scores = {}
-        details = {} 
+        actual_duration = self.time_delta - 0.1
+        actions = list(self.actions_dict.keys())
 
-        for action in self.actions_dict.keys():
-            actual_duration = self.time_delta - 0.1
-            
-            pred_clusters = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration) for p in particles_epistemic])
-            raw_epistemic = self.calculate_efe_epistemic(pred_clusters, weights_epistemic)
+        # ── EFE evaluation — single step or horizon tree ─────────────
+        def evaluate_efe_single(particles_ep, weights_ep, action):
+            """Compute EFE for one action at one step."""
+            pred_ep = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration)
+                                    for p in particles_ep])
+            raw_epistemic = self.calculate_efe_epistemic(pred_ep, weights_ep)
 
             if only_epistemic:
                 raw_pragmatic = 0.0
-            
             else:
-                pred_particles = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration) for p in initial_poses_pragmatic])
-                raw_pragmatic = self.calculate_efe_pragmatic(pred_particles, initial_weights_pragmatic)
+                pred_pr       = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration)
+                                        for p in initial_poses_pragmatic])
+                raw_pragmatic = self.calculate_efe_pragmatic(pred_pr, initial_weights_pragmatic)
 
-            total_efe = (self.alpha_epistemic * raw_epistemic) + (self.beta_pragmatic * raw_pragmatic)
-            efe_scores[action] = total_efe
-            details[action] = {'epistemic': self.alpha_epistemic * raw_epistemic, 'pragmatic': self.beta_pragmatic * raw_pragmatic}
-            # self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {raw_epistemic:.2f}, Pragmatic: {raw_pragmatic:.2f})")
+            return (self.alpha_epistemic * raw_epistemic) + (self.beta_pragmatic * raw_pragmatic), \
+                self.alpha_epistemic * raw_epistemic, \
+                self.beta_pragmatic * raw_pragmatic
         
+        def propagate_gmm(particles_ep, weights_ep, action):
+            """
+            Propagate GMM clusters forward under action (motion model only, no obs).
+            Returns predicted clusters and unchanged weights.
+            """
+            pred = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration)
+                            for p in particles_ep])
+            return pred, weights_ep.copy()
+
+        gamma = 0.9  # discount factor for future EFE steps
+        
+        def horizon_search(particles_ep, weights_ep, particles_pr, weights_pr, depth):
+            action_efes = {}
+            for action in actions:
+
+                # ── Epistemic (5 GMM clusters) ────────────────────────
+                pred_ep       = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration)
+                                        for p in particles_ep])
+                raw_epistemic = self.calculate_efe_epistemic(pred_ep, weights_ep)
+
+                # ── Pragmatic (500 particles, propagated correctly) ───
+                if only_epistemic:
+                    raw_pragmatic = 0.0
+                    pred_pr = None
+                else:
+                    pred_pr       = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration)
+                                            for p in particles_pr])
+                    raw_pragmatic = self.calculate_efe_pragmatic(pred_pr, weights_pr)
+
+                efe_now = (self.alpha_epistemic * raw_epistemic) + (self.beta_pragmatic * raw_pragmatic)
+
+                if depth > 1:
+                    # Reuse pred_ep and pred_pr — no recomputation needed
+                    future_efes = horizon_search(
+                        pred_ep, weights_ep.copy(),
+                        pred_pr if pred_pr is not None else particles_pr,
+                        weights_pr.copy(),
+                        depth - 1
+                    )
+                    best_future = min(future_efes.values())
+                else:
+                    best_future = 0.0
+
+                action_efes[action] = efe_now + gamma * best_future
+                #self.get_logger().info(f"For Action {action} in horizon search def: efe_now = {efe_now}. best_future = {best_future}")
+            return action_efes
+                
+        # ── Run search ───────────────────────────────────────────────
+        if n_time_horizon == 1:
+            # Original single-step logic — no tree overhead
+            efe_scores = {}
+            details    = {}
+            for action in actions:
+                total_efe, ep, pr       = evaluate_efe_single(particles_epistemic, weights_epistemic, action)
+                efe_scores[action]      = total_efe
+                details[action]         = {'epistemic': ep, 'pragmatic': pr}
+                self.get_logger().info("Single Time Horizon")
+                self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {ep:.2f}, Pragmatic: {pr:.2f})")
+
+        else:
+            self.get_logger().info(f"Time Horizon = {n_time_horizon}")
+            # Horizon tree search — GMM clusters only
+            efe_scores = horizon_search(particles_epistemic, weights_epistemic, 
+                                        initial_poses_pragmatic, initial_weights_pragmatic, n_time_horizon)
+            # Recompute details for the best action at depth=1 for logging
+            details = {}
+            for action in actions:
+                _, ep, pr          = evaluate_efe_single(particles_epistemic, weights_epistemic, action)
+                details[action]    = {'epistemic': ep, 'pragmatic': pr}
+                self.get_logger().info(f"Final EFE For Action {action}: ep:{ep} and pr:{pr}")
         best_action = min(efe_scores, key=efe_scores.get)
         best_detail = details[best_action]
 
         # --- PHASE 3: FINALIZE & PUBLISH ---
         # Prevent WAIT from being chosen more than 2 times in a row
-        best_action = self.handle_wait_streak(best_action, efe_scores, list(self.actions_dict.keys()))
+        best_action = self.handle_wait_streak(best_action, efe_scores, actions)
 
         # Store for logging
         self.runtime_counter += 1
@@ -343,7 +417,7 @@ class ActiveInferenceController:
         
         total_time = time.time() - start_time
         # self.get_logger().warn(f"Total Time AIC Calculation (efe evaluation): {total_time:.2f}s")
-
+        self.get_logger().info(f"Final EFE Scores: {efe_scores}. Time for efe calc is {total_time}")
         if total_time > self.time_delta:
             self.get_logger().warn(f"Slowdown: {total_time:.2f}s")
         

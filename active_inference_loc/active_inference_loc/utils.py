@@ -215,7 +215,6 @@ def get_proximity_risk(pose, map_metadata, safe_dist=0.5, robot_radius=0.18, sig
 
     # 2. Boundary Check
     if not (0 <= grid_x < map_metadata['width'] and 0 <= grid_y < map_metadata['height']):
-        print("Pose out of map bounds for risk calculation.")
         return 1.0 # Out of bounds is maximum risk
 
     # 3. Distance Lookup (meters)
