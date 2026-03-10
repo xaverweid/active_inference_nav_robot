@@ -386,8 +386,8 @@ class ActiveInferenceController:
                 total_efe, ep, pr       = evaluate_efe_single(particles_epistemic, weights_epistemic, action)
                 efe_scores[action]      = total_efe
                 details[action]         = {'epistemic': ep, 'pragmatic': pr}
-                self.get_logger().info("Single Time Horizon")
-                self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {ep:.2f}, Pragmatic: {pr:.2f})")
+                # self.get_logger().info("Single Time Horizon")
+                # self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {ep:.2f}, Pragmatic: {pr:.2f})")
 
         else:
             self.get_logger().info(f"Time Horizon = {n_time_horizon}")
@@ -399,7 +399,7 @@ class ActiveInferenceController:
             for action in actions:
                 _, ep, pr          = evaluate_efe_single(particles_epistemic, weights_epistemic, action)
                 details[action]    = {'epistemic': ep, 'pragmatic': pr}
-                self.get_logger().info(f"Final EFE For Action {action}: ep:{ep} and pr:{pr}")
+                # self.get_logger().info(f"Final EFE For Action {action}: ep:{ep} and pr:{pr}")
         best_action = min(efe_scores, key=efe_scores.get)
         best_detail = details[best_action]
 
@@ -417,7 +417,7 @@ class ActiveInferenceController:
         
         total_time = time.time() - start_time
         # self.get_logger().warn(f"Total Time AIC Calculation (efe evaluation): {total_time:.2f}s")
-        self.get_logger().info(f"Final EFE Scores: {efe_scores}. Time for efe calc is {total_time}")
+        # self.get_logger().info(f"Final EFE Scores: {efe_scores}. Time for efe calc is {total_time}")
         if total_time > self.time_delta:
             self.get_logger().warn(f"Slowdown: {total_time:.2f}s")
         
