@@ -170,18 +170,23 @@ def run_benchmarking():
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["active_inf_5"]#, "active_inf_500", "random_walk", "entropy_min"]  
-    
-    summary_filename = f'summary_results_{RUN_TIMESTAMP}.csv'
-    summary_f = open(summary_filename, mode='w')
-    summary_writer = csv.writer(summary_f)
-    summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta', 
-                             'convergence_threshold', 'bimodal_score_threshold','planning_sigma','spatial_entropy_res',])
+    algos = ["active_inf_5", "active_inf_500"]#, "active_inf_5_h3", "random_walk", "entropy_min"]  
     
     for algo in algos:
-        for i, p in enumerate(poses[0:1], start=0):
+        
+        algo_dir = os.path.join(os.getcwd(), algo)
+        os.makedirs(algo_dir, exist_ok=True)
+        
+        summary_filename = os.path.join(algo_dir, f"summary_{algo}_{RUN_TIMESTAMP}.csv")
+        summary_f = open(summary_filename, mode='w')
+        summary_writer = csv.writer(summary_f)
+        summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta',
+                                'convergence_threshold', 'bimodal_score_threshold',
+                                'planning_sigma', 'spatial_entropy_res'])
 
-            trial_id = f"trial_{algo}_p{i+1:04d}_{RUN_TIMESTAMP}"
+        for i, p in enumerate(poses[0:2], start=0):
+
+            trial_id = os.path.join(algo_dir, f"trial_{algo}_p{i+1:04d}_{RUN_TIMESTAMP}")
             print(f"\n{'='*60}")
             print(f">>> Starting {trial_id}")
             print(f"{'='*60}")
@@ -241,7 +246,8 @@ def run_benchmarking():
             print(f"✓ Finished {trial_id}: {logger.status} (steps={logger.current_step})")
             print(f"  CSV saved: {trial_id}.csv")
 
-    summary_f.close()
+        summary_f.close()
+
     rclpy.shutdown()
     print(f"\n{'='*60}")
     print("✓ All experiments completed!")
