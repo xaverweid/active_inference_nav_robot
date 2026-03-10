@@ -48,23 +48,26 @@ class BeliefMonitorNode(Node):
         if self.map_metadata is None:
             self.map_metadata = get_map_metadata(msg)
             
-            # --- ROTATE MAP DATA 270 CW (equivalent to -90 CW) ---
-            rotated_map = np.rot90(self.map_metadata['data'], k=3)
+            map_data = self.map_metadata['data']
             
-            # --- CALCULATE NEW EXTENT (Correct for 270 CW) ---
-            # Transformation: x' = -y, y' = x
-            # New X range is negative old Y range: [-y_max, -y_min]
-            # New Y range is old X range: [x_min, x_max]
+           # Standard ROS Map Bounds: [x_min, x_max, y_min, y_max]
             orig_x_min = self.map_metadata['origin_x']
             orig_x_max = orig_x_min + self.map_metadata['width'] * self.map_metadata['resolution']
             orig_y_min = self.map_metadata['origin_y']
             orig_y_max = orig_y_min + self.map_metadata['height'] * self.map_metadata['resolution']
             
-            self.rotated_extent = [-orig_y_max, -orig_y_min, orig_x_min, orig_x_max]
+            self.extent = [orig_x_min, orig_x_max, orig_y_min, orig_y_max]
 
-            self.ax.imshow(rotated_map, cmap='gray', origin='lower',
-                           extent=self.rotated_extent, alpha=0.6)
-            self.ax.set_title("Robot Belief Monitor")
+            self.ax.clear()
+            self.ax.imshow(map_data, cmap='gray', origin='lower',
+                           extent=self.extent, alpha=0.6)
+            self.ax.set_title("Robot Belief Monitor (Raw/Unrotated Frame)")
+            
+            # Re-add dashboard since ax.clear() removes it
+            self.dashboard = self.ax.text(0.02, 0.98, 'Waiting for data...', transform=self.ax.transAxes, 
+                                      verticalalignment='top', family='monospace', fontsize=9,
+                                      bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray'),
+                                      zorder=100)
             
     def metrics_callback(self, msg):
         with self.lock:
@@ -72,19 +75,13 @@ class BeliefMonitorNode(Node):
                 self.current_metrics = msg.data
 
     def cloud_callback(self, msg):
-        # 1. DO THE HEAVY LIFTING OUTSIDE THE LOCK
-        # Convert the flat list from the message into a structured NumPy array
         try:
-            # We reshape to -1 rows and 5 columns (x, y, cos, sin, weight)
             raw_data = np.array(msg.data).reshape(-1, 5)
-            
-            # Extract columns
-            points = raw_data[:, :2]           # x, y
+            points = raw_data[:, :2]           
             cos_yaw = raw_data[:, 2]
             sin_yaw = raw_data[:, 3]
             weights = raw_data[:, 4]
             
-            # Stack them into a format your plotter expects (x, y, cos, sin)
             processed_cloud = np.column_stack((points, cos_yaw, sin_yaw))
 
         except Exception as e:
@@ -96,21 +93,13 @@ class BeliefMonitorNode(Node):
             # Store both the points and weights so the main loop can use them
             self.latest_cloud_data = processed_cloud
             self.latest_weights = weights
-
-    def listener_callback(self, msg):
-        # Convert back to (N, 4) in one line
-        data = np.array(msg.data).reshape(-1, 4)
-        particles = data[:, :3] # x, y, yaw
-        weights = data[:, 3]    # weights
-    
-        self.plotter.update(particles, weights)
         
     def update_plot(self):
         with self.lock:
             if self.current_metrics is None or self.latest_cloud_data is None or self.latest_weights is None:
                 return
             
-            raw_points = self.latest_cloud_data.copy()
+            points = self.latest_cloud_data.copy()
             weights = self.latest_weights.copy()
             metrics = list(self.current_metrics)
 
@@ -118,19 +107,8 @@ class BeliefMonitorNode(Node):
             self.latest_weights = None
 
         try:
-            # 1. ROTATE PARTICLE DATA 270 CW (equivalent to -90 CW) for synchronization with the map
-            rotated_points = np.zeros_like(raw_points)
-            # New X = -Old Y
-            # New Y = Old X
-            rotated_points[:, 0] = -raw_points[:, 1]  
-            rotated_points[:, 1] = raw_points[:, 0]   
-            # New Cos = -Old Sin
-            # New Sin = Old Cos
-            rotated_points[:, 2] = -raw_points[:, 3]
-            rotated_points[:, 3] = raw_points[:, 2]
-
-            # Now that points are rotated, we cluster them
-            cluster_poses, cluster_weights, _ = self.clusturer.get_representative_clusters_from_gmm(rotated_points, weights)
+            
+            cluster_poses, cluster_weights, _ = self.clusturer.get_representative_clusters_from_gmm(points, weights)
             
             # 2. RENDERING LOGIC
             for artist in list(self.ax.collections) + list(self.ax.patches):
@@ -138,12 +116,10 @@ class BeliefMonitorNode(Node):
             for txt in list(self.ax.texts):
                 if txt != self.dashboard: txt.remove()
 
-            # Plot Rotated Particles
-            self.ax.scatter(rotated_points[:, 0], rotated_points[:, 1], s=1, c='blue', alpha=0.1)
-            # Assign labels for the rotated clusters
+            # Plot Unrotated Particles
+            self.ax.scatter(points[:, 0], points[:, 1], s=1, c='blue', alpha=0.1)  
             # Use the GMM to predict labels for the particles directly
-
-            labels = self.clusturer.gmm.predict(rotated_points)
+            labels = self.clusturer.gmm.predict(points)
             # Normalization for colors (0 to max weight)
             # This ensures the "best" cluster is always greenest
             norm = plt.Normalize(vmin=0, vmax=np.max(cluster_weights))
@@ -158,7 +134,7 @@ class BeliefMonitorNode(Node):
                 # High weight = Green, Low weight = Red
                 color = cmap(norm(weight))
                 # Get ellipse for the rotated cluster
-                res = get_covariance_ellipse(rotated_points[cluster_mask, :2])
+                res = get_covariance_ellipse(points[cluster_mask, :2])
                 if res:
                     width, height, angle = res
                     # Draw Belief Ellipse
@@ -167,7 +143,7 @@ class BeliefMonitorNode(Node):
                     self.ax.add_patch(ell)
                     
                     # Draw Heading Arrow (Red stays red for visibility)
-                    self.ax.arrow(mx, my, 0.4*ctheta, 0.4*stheta, color='red', 
+                    self.ax.arrow(mx, my, 0.4*ctheta, 0.4*stheta, color='blue', 
                                 head_width=0.1, zorder=5, alpha=min(1.0, weight*5))
                 
             # Dashboard Update

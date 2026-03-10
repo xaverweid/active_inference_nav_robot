@@ -2,7 +2,7 @@ import numpy as np
 import time
 from nav2_msgs.msg import Particle, ParticleCloud
 import scipy
-from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence, calculate_spatial_entropy, is_pose_in_collision, calculate_bimodality
+from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence, calculate_spatial_entropy, is_pose_in_collision, calculate_bimodality_position
 from .models import predict_motion, raycast_scan_numba
 from std_msgs.msg import Float32MultiArray, String
 from geometry_msgs.msg import Pose, Quaternion, Point
@@ -47,8 +47,8 @@ class ActiveInferenceController:
         self.wait_streak = 0
         self.clock = None
 
-        self.convergence_threshold = 0.20
-        self.bimodal_score_threshold = 0.3
+        self.convergence_threshold = 0.25
+        self.bimodal_score_threshold = 0.30 # only location, not rotation 
         self.success_counter = 0 # counts how many successes in localization (convergence and non bimodal) have happened, if 3 in a row the run ends with a Success
 
         # --- TUNABLE PARAMETERS ---
@@ -168,15 +168,10 @@ class ActiveInferenceController:
         # **Compute estimated position (weighted mean)**
         self.estimated_position = np.average(points[:, :2], axis=0, weights=weights)
         self.estimated_rotation = np.arctan2(
-            np.average(np.sin(points[:, 2]), weights=weights),
-            np.average(np.cos(points[:, 2]), weights=weights)
+            np.average(points[:, 3], weights=weights), # Already sin(yaw)
+            np.average(points[:, 2], weights=weights)  # Already cos(yaw)
         )
-        # Apply the same 270° CW rotation to match map frame
-        # 270° CW = -π/2 radians
-        self.estimated_rotation_map_frame = self.estimated_rotation - np.pi/2
-        # Normalize to [-π, π]
-        self.estimated_rotation_map_frame = (self.estimated_rotation_map_frame + np.pi) % (2 * np.pi) - np.pi
-
+        
         # **Compute position error: distance from actual real position to AMCL estimate**
         # Actual real position = spawn_pose + true_position (offset from spawn)
         if self.starting_pose is not None and self.ground_truth_pose is not None:
@@ -194,20 +189,20 @@ class ActiveInferenceController:
             
             # Yaw is additive (angles add)
             actual_real_yaw = self.starting_pose[2] + self.ground_truth_pose[2]
+            actual_real_yaw = (actual_real_yaw + np.pi) % (2 * np.pi) - np.pi # Standard wrap
             self.actual_real_yaw = actual_real_yaw
             
             # Calculate errors
             self.position_error = np.linalg.norm(self.estimated_position - actual_real_position)
-            rotational_error = abs((self.estimated_rotation_map_frame - actual_real_yaw + np.pi) % (2 * np.pi) - np.pi)
+            rotational_error = abs((self.estimated_rotation - actual_real_yaw + np.pi) % (2 * np.pi) - np.pi)            
             self.rotational_error = rotational_error
             
             # Logging
-            '''
-            self.get_logger().info(f"Starting Position: {self.starting_pose[:2]}, Ground Truth Position: {self.ground_truth_pose[:2]}, Actual Real Position: {actual_real_position}")
-            self.get_logger().info(f"Estimated Position: {self.estimated_position}, Actual Real Position: {actual_real_position}, Positional Error: {self.position_error:.2f}")
-            self.get_logger().info(f"Starting Yaw: {self.starting_pose[2]:.2f}, Ground Truth Yaw: {self.ground_truth_pose[2]:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}")
-            self.get_logger().info(f"Estimated Yaw (raw): {self.estimated_rotation:.2f}, Estimated Yaw (map frame): {self.estimated_rotation_map_frame:.2f}, Rotational Error: {self.rotational_error:.2f}")
-            '''
+            # self.get_logger().info(f"Starting Position: {self.starting_pose[:2]}, Ground Truth Position: {self.ground_truth_pose[:2]}, Actual Real Position: {actual_real_position}")
+            # self.get_logger().info(f"Estimated Position: {self.estimated_position}, Actual Real Position: {actual_real_position}, Positional Error: {self.position_error:.2f}")
+            # self.get_logger().info(f"Starting Yaw: {self.starting_pose[2]:.2f}, Ground Truth Yaw: {self.ground_truth_pose[2]:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}")
+            # self.get_logger().info(f"Estimated Yaw (raw): {self.estimated_rotation:.2f}, Estimated Yaw (map frame): {self.estimated_rotation_map_frame:.2f}, Rotational Error: {self.rotational_error:.2f}")
+            
         else:
             self.get_logger().warn("Controller Error: Starting Pose or Ground Truth Pose not available")
         
@@ -251,7 +246,7 @@ class ActiveInferenceController:
             self.publish_status(f"FAILURE: Unknown mode '{self.algo_mode}'")
             return "WAIT"
 
-    def _run_active_inference(self, n_raycast_particles=500, n_time_horizon=1, only_epistemic=False):  
+    def _run_active_inference(self, n_raycast_particles=5, n_time_horizon=1, only_epistemic=False):  
         """Active Inference with expected free energy.
         Input: 
         - n_raycast_particles: Number of sampled particles (5, 50, 500) for epistemic. pragmatic always 500
@@ -265,7 +260,7 @@ class ActiveInferenceController:
         gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
         
         # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
-        self.bimodal_score, self.is_bimodal = calculate_bimodality(gmm_poses, gmm_weights)
+        self.bimodal_score, self.is_bimodal = calculate_bimodality_position(gmm_poses, gmm_weights)
         
         termination_action = self.check_termination_conditions()
         if termination_action:
@@ -419,7 +414,7 @@ class ActiveInferenceController:
         gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
         
         # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
-        self.bimodal_score, self.is_bimodal = calculate_bimodality(gmm_poses, gmm_weights)
+        self.bimodal_score, self.is_bimodal = calculate_bimodality_position(gmm_poses, gmm_weights)
         
         termination_action = self.check_termination_conditions()
         if termination_action:
@@ -522,7 +517,7 @@ class ActiveInferenceController:
         gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
         
         # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
-        self.bimodal_score, self.is_bimodal = calculate_bimodality(gmm_poses, gmm_weights)
+        self.bimodal_score, self.is_bimodal = calculate_bimodality_position(gmm_poses, gmm_weights)
         
         termination_action = self.check_termination_conditions()
         if termination_action:
@@ -843,6 +838,10 @@ class ActiveInferenceController:
             float(peak2_y), #26
             float(peak2_yaw), #27
             float(peak_distance), #28
+            float(self.convergence_threshold),  #29
+            float(self.bimodal_score_threshold), #30
+            float(self.planning_sigma),   # 31
+            float(self.spatial_entropy_res), #32
         ]
 
         self.metrics_pub.publish(metrics_msg)
