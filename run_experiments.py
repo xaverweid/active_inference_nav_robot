@@ -125,24 +125,40 @@ def load_poses_from_csv(poses_file_path):
     return poses
 
 def cleanup_processes(sim_proc, ctrl_proc):
-    """Kill all ROS and Gazebo processes aggressively."""
     print("Cleaning up system processes...")
-    try:
-        os.killpg(os.getpgid(sim_proc.pid), signal.SIGTERM)
-        os.killpg(os.getpgid(ctrl_proc.pid), signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-
-    # Kill Gazebo and Ruby (the engine Jazzy uses)
-    # Using -f (full command) ensures we catch the right processes
-    subprocess.run(["pkill", "-9", "-f", "gz"], stderr=subprocess.DEVNULL)
-    subprocess.run(["pkill", "-9", "-f", "ruby"], stderr=subprocess.DEVNULL)
     
-    # Refresh the ROS 2 graph
+    # 1. Graceful SIGTERM first
+    for proc in [sim_proc, ctrl_proc]:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    time.sleep(2)
+    
+    # 2. Force kill anything remaining
+    for proc in [sim_proc, ctrl_proc]:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    # 3. Kill ALL relevant ROS/Gazebo processes by name
+    for pattern in ["gz", "ruby", "gzserver", "gzclient", 
+                    "robot_state_publisher", "amcl", 
+                    "nav2", "aic_node", "diff_drive"]:
+        subprocess.run(["pkill", "-9", "-f", pattern], stderr=subprocess.DEVNULL)
+    
+    # 4. Clear shared memory (Gazebo uses this heavily)
+    subprocess.run("ipcs -m | awk 'NR>3 {print $2}' | xargs -r ipcrm -m", 
+                   shell=True, stderr=subprocess.DEVNULL)
+    
+    # 5. Restart ROS2 daemon
     subprocess.run(["ros2", "daemon", "stop"], stderr=subprocess.DEVNULL)
+    time.sleep(1)
     subprocess.run(["ros2", "daemon", "start"], stderr=subprocess.DEVNULL)
     
-    time.sleep(5)
+    # 6. Longer wait — give OS time to release ports/sockets
+    time.sleep(8)  # was 5
 
 active_sim_proc = None
 active_ctrl_proc = None
@@ -185,6 +201,11 @@ def run_benchmarking():
                                 'planning_sigma', 'spatial_entropy_res'])
 
         for i, p in enumerate(poses[0:1000], start=0):
+
+            # Hard reset every 100 runs: sleep longer to let system breathe
+            if i > 0 and i % 100 == 0:
+                print(f"[PERIODIC RESET] Run {i} — extended cooldown...")
+                time.sleep(30)  # let OS fully settle
 
             trial_id = os.path.join(algo_dir, f"trial_{algo}_p{i+1:04d}_{RUN_TIMESTAMP}")
             print(f"\n{'='*60}")
