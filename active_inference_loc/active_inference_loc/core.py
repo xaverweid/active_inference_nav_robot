@@ -47,7 +47,7 @@ class ActiveInferenceController:
         self.wait_streak = 0
         self.clock = None
 
-        self.convergence_threshold = 0.25
+        self.convergence_threshold = 0.35
         self.bimodal_score_threshold = 0.30 # only location, not rotation 
         self.success_counter = 0 # counts how many successes in localization (convergence and non bimodal) have happened, if 3 in a row the run ends with a Success
 

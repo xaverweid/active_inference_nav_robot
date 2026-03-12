@@ -319,7 +319,7 @@ def calculate_convergence(particles, weights):
     # Scale yaw by a factor to make it comparable to positional std
     # yaw_weight=0.5 means full 180° flip contributes ~1.28m equivalent
     # increase yaw_weight to make convergence stricter on orientation
-    yaw_weight = 2  # tune this
+    yaw_weight = 1  # tune this
     total_std  = std_pos + yaw_weight * std_yaw
 
     return float(total_std)

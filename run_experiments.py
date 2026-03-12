@@ -184,7 +184,7 @@ def run_benchmarking():
                                 'convergence_threshold', 'bimodal_score_threshold',
                                 'planning_sigma', 'spatial_entropy_res'])
 
-        for i, p in enumerate(poses[0:2], start=0):
+        for i, p in enumerate(poses[0:1000], start=0):
 
             trial_id = os.path.join(algo_dir, f"trial_{algo}_p{i+1:04d}_{RUN_TIMESTAMP}")
             print(f"\n{'='*60}")
