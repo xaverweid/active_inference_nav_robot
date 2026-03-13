@@ -260,6 +260,8 @@ class ActiveInferenceController:
 
         # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
         gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
+        self.efe_variances = gmm_variances
+
         
         # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
         self.bimodal_score, self.is_bimodal = calculate_bimodality_position(gmm_poses, gmm_weights)
@@ -294,20 +296,25 @@ class ActiveInferenceController:
         
         self.efe_epis_particles = particles_epistemic
         self.efe_epis_weights = weights_epistemic
-        self.efe_variances = gmm_variances
 
         # PRAGMATIC
         # Importance Sampling always with 500 (max) 
+        # With Time horizon use GMM particles for pragmatic as well
         if n_time_horizon == 1:
             sample_size_pragmatic = min(num_total_p, 500)
+            p_dist_pragmatic = initial_weights / np.sum(initial_weights)
+            
+            sample_indices_pragmatic = np.random.choice(
+                num_total_p, sample_size_pragmatic, replace=True, p=p_dist_pragmatic
+            )
+            particles_pragmatic = initial_particles[sample_indices_pragmatic]
+            weights_pragmatic = np.ones(sample_size_pragmatic) / sample_size_pragmatic
+            
+            initial_poses_pragmatic = np.copy(particles_pragmatic)
+            initial_weights_pragmatic = np.copy(weights_pragmatic)
         else:
-            sample_size_pragmatic = min(num_total_p, 50)
-        sample_indices_pragmatic = np.random.choice(num_total_p, sample_size_pragmatic, replace=False)
-        sample_particles_pragmatic = initial_particles[sample_indices_pragmatic]
-        sample_weights_pragmatic = initial_weights[sample_indices_pragmatic]
-        sample_weights_pragmatic = np.ones(sample_size_pragmatic) / sample_size_pragmatic
-        initial_poses_pragmatic = np.copy(sample_particles_pragmatic)
-        initial_weights_pragmatic = np.copy(sample_weights_pragmatic)
+            initial_poses_pragmatic = np.copy(particles_epistemic)
+            initial_weights_pragmatic = np.copy(weights_epistemic)
 
         actual_duration = self.time_delta - 0.1
         actions = list(self.actions_dict.keys())
@@ -330,15 +337,6 @@ class ActiveInferenceController:
                 self.alpha_epistemic * raw_epistemic, \
                 self.beta_pragmatic * raw_pragmatic
         
-        def propagate_gmm(particles_ep, weights_ep, action):
-            """
-            Propagate GMM clusters forward under action (motion model only, no obs).
-            Returns predicted clusters and unchanged weights.
-            """
-            pred = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration)
-                            for p in particles_ep])
-            return pred, weights_ep.copy()
-
         gamma = 0.9  # discount factor for future EFE steps
         
         def horizon_search(particles_ep, weights_ep, particles_pr, weights_pr, depth):
@@ -390,7 +388,6 @@ class ActiveInferenceController:
                 # self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {ep:.2f}, Pragmatic: {pr:.2f})")
 
         else:
-            self.get_logger().info(f"Time Horizon = {n_time_horizon}")
             # Horizon tree search — GMM clusters only
             efe_scores = horizon_search(particles_epistemic, weights_epistemic, 
                                         initial_poses_pragmatic, initial_weights_pragmatic, n_time_horizon)
@@ -486,6 +483,7 @@ class ActiveInferenceController:
         
         # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
         gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
+        self.efe_variances = gmm_variances
         
         # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
         self.bimodal_score, self.is_bimodal = calculate_bimodality_position(gmm_poses, gmm_weights)
@@ -525,7 +523,7 @@ class ActiveInferenceController:
                 if not is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
                     safe_actions.append(action)
             
-            self.get_logger().info(f"Collision filter: {len(safe_actions)}/{len(available_actions)} safe")
+            # self.get_logger().info(f"Collision filter: {len(safe_actions)}/{len(available_actions)} safe")
         else:
             # Position not available yet, skip collision checking
             self.get_logger().warn("Actual position not available, using all actions")
@@ -589,6 +587,7 @@ class ActiveInferenceController:
         
         # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
         gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
+        self.efe_variances = gmm_variances
         
         # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
         self.bimodal_score, self.is_bimodal = calculate_bimodality_position(gmm_poses, gmm_weights)
@@ -836,6 +835,7 @@ class ActiveInferenceController:
             best_detail (dict): {'epistemic': float, 'pragmatic': float}.
             gmm_poses and gmm_weights: coming from the gmm (5) for bimodality analysis
         """
+
         if self.metrics_pub is None:
             return
 
