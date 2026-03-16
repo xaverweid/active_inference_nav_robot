@@ -532,7 +532,7 @@ class ActiveInferenceController:
         best_action = np.random.choice(safe_actions)
         # Random walk has no "EFE components", so we set them to neutral for the CSV/Logs
         efe_scores = {action: 0.0 for action in available_actions}
-        best_detail = {'epistemic': 0.0, 'pragmatic': 0.0}
+        best_detail = {'epistemic': -1.0, 'pragmatic': -1.0}
 
         # --- PHASE 3: FINALIZE & PUBLISH ---
         # Prevent WAIT from being chosen more than 2 times in a row
