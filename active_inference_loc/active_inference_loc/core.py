@@ -2,7 +2,7 @@ import numpy as np
 import time
 from nav2_msgs.msg import Particle, ParticleCloud
 import scipy
-from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence, calculate_spatial_entropy, is_pose_in_collision, calculate_bimodality_position
+from .utils import ParticleClusturer, ACTION_EFFECTS_long, ACTION_EFFECTS_short, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence, calculate_spatial_entropy, is_pose_in_collision, calculate_bimodality_position
 from .models import predict_motion, raycast_scan_numba
 from std_msgs.msg import Float32MultiArray, String
 from geometry_msgs.msg import Pose, Quaternion, Point
@@ -14,14 +14,15 @@ class ActiveInferenceController:
     Handles decision logic for all control modes.
     """
     
-    def __init__(self, logger, algo_mode):
+    def __init__(self, logger, algo_mode, seconds_per_step):
         self.logger = logger
         self.algo_mode = algo_mode
+        self.seconds_per_step = seconds_per_step
         self.metrics_pub = None
         self.particle_data_pub = None
         self.status_pub = None
         self.clusturer = ParticleClusturer()
-        self.time_delta = 1.0  
+        self.time_delta = seconds_per_step # parameter coming from launch init, usually 1 or 5
         self.map_2d = None
         self.dist_map = None
         self.map_metadata = None
@@ -33,8 +34,10 @@ class ActiveInferenceController:
         self.efe_epis_particles = None
         self.efe_epis_weights = None
         self.efe_variances = None
-
-        self.actions_dict = ACTION_EFFECTS
+        if seconds_per_step<3:
+            self.actions_dict = ACTION_EFFECTS_short
+        else:
+            self.actions_dict = ACTION_EFFECTS_long
         self.shannon_entropy = None
         self.shannon_entropy_norm = None
         self.effective_sample_size_percent = None
@@ -107,7 +110,7 @@ class ActiveInferenceController:
         self.dist_map = self.map_metadata['distance_map']
         self.get_logger().info("Map (2D and dist_map) updated successfully.")
 
-    def update_belief(self, points, weights, dt=1.0):
+    def update_belief(self, points, weights):
         """
         Vectorized update of belief state.
         Also computes estimated position (mean of belief).
@@ -163,7 +166,6 @@ class ActiveInferenceController:
         # Update State
         self.current_particles = points
         self.current_weights = weights
-        self.time_delta = dt
         
         # **Compute estimated position (weighted mean)**
         self.estimated_position = np.average(points[:, :2], axis=0, weights=weights)
@@ -316,20 +318,19 @@ class ActiveInferenceController:
             initial_poses_pragmatic = np.copy(particles_epistemic)
             initial_weights_pragmatic = np.copy(weights_epistemic)
 
-        actual_duration = self.time_delta - 0.1
         actions = list(self.actions_dict.keys())
 
         # ── EFE evaluation — single step or horizon tree ─────────────
         def evaluate_efe_single(particles_ep, weights_ep, action):
             """Compute EFE for one action at one step."""
-            pred_ep = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration)
+            pred_ep = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta - 0.1)
                                     for p in particles_ep])
             raw_epistemic = self.calculate_efe_epistemic(pred_ep, weights_ep)
 
             if only_epistemic:
                 raw_pragmatic = 0.0
             else:
-                pred_pr       = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration)
+                pred_pr       = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta - 0.1)
                                         for p in initial_poses_pragmatic])
                 raw_pragmatic = self.calculate_efe_pragmatic(pred_pr, initial_weights_pragmatic)
 
@@ -344,7 +345,7 @@ class ActiveInferenceController:
             for action in actions:
 
                 # ── Epistemic (5 GMM clusters) ────────────────────────
-                pred_ep       = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration)
+                pred_ep       = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta - 0.1)
                                         for p in particles_ep])
                 raw_epistemic = self.calculate_efe_epistemic(pred_ep, weights_ep)
 
@@ -353,7 +354,7 @@ class ActiveInferenceController:
                     raw_pragmatic = 0.0
                     pred_pr = None
                 else:
-                    pred_pr       = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration)
+                    pred_pr       = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta-0.1)
                                             for p in particles_pr])
                     raw_pragmatic = self.calculate_efe_pragmatic(pred_pr, weights_pr)
 
@@ -416,7 +417,7 @@ class ActiveInferenceController:
         # self.get_logger().warn(f"Total Time AIC Calculation (efe evaluation): {total_time:.2f}s")
         # self.get_logger().info(f"Final EFE Scores: {efe_scores}. Time for efe calc is {total_time}")
         if total_time > self.time_delta:
-            self.get_logger().warn(f"Slowdown: {total_time:.2f}s")
+            self.get_logger().warn(f"Slowdown: {total_time:.2f}s. Was higher than time_delta of {self.time_delta}")
         
         return best_action
     
@@ -550,7 +551,7 @@ class ActiveInferenceController:
         
         total_time = time.time() - start_time
         if total_time > self.time_delta:
-            self.get_logger().warn(f"Slowdown in Random Walk: {total_time:.2f}s")
+            self.get_logger().warn(f"Slowdown in Random Walk: {total_time:.2f}s. Was higher than time_delta of {self.time_delta}")
         
         return best_action
     

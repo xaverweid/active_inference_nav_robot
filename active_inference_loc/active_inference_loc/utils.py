@@ -14,7 +14,7 @@ print(inspect.signature(GaussianMixture.fit))
 # Dictionary mapping action names to Twist components
 # WATCH OUT, these must match your motion model exactly!
 
-ACTION_EFFECTS = {
+ACTION_EFFECTS_short = {
     'WAIT':          {'linear': 0.0,  'angular': 0.0},
     'FORWARD_SMALL': {'linear': 0.15, 'angular': 0.0},
     'FORWARD_LARGE': {'linear': 0.30, 'angular': 0.0},
@@ -25,6 +25,24 @@ ACTION_EFFECTS = {
     'BACKWARD_SMALL':{'linear': -0.15,'angular': 0.0},
 }
 
+# These Action effects are used when t>=3, meaning the robot takes bigger steps at once
+# Assuming t = 5.0 seconds per step, keep in mind that 0.1 sec is deducted for calculation
+# Total distance = speed * (5.0 - 0.1)
+ACTION_EFFECTS_long = {
+    'WAIT':          {'linear': 0.0,   'angular': 0.0},
+    # Moves 0.75m
+    'FORWARD_SMALL': {'linear': 0.15,  'angular': 0.0}, 
+    # Moves 1.5m
+    'FORWARD_LARGE': {'linear': 0.30,  'angular': 0.0}, 
+    # Rotates ~90 degrees (1.57 radians)
+    'ROTATE_LEFT':   {'linear': 0.0,   'angular': 0.314}, 
+    'ROTATE_RIGHT':  {'linear': 0.0,   'angular': -0.314},
+    # Wide arc: Moves 0.75m and turns ~45 degrees
+    'TURN_LEFT':     {'linear': 0.15,  'angular': 0.157}, 
+    'TURN_RIGHT':    {'linear': 0.15,  'angular': -0.157},
+    # Moves 0.5m backward
+    'BACKWARD_SMALL':{'linear': -0.10, 'angular': 0.0}, 
+}
 # Particle Clustering Utility
 
 class ParticleClusturer:

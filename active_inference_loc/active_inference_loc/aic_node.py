@@ -7,7 +7,7 @@ from std_msgs.msg import Float32MultiArray, String
 from nav2_msgs.msg import ParticleCloud
 from threading import Timer
 from .core import ActiveInferenceController
-from .utils import ACTION_EFFECTS, cloud_to_numpy
+from .utils import ACTION_EFFECTS_long, ACTION_EFFECTS_short, cloud_to_numpy
 from rclpy.time import Time
 import numpy as np
 from tf_transformations import euler_from_quaternion
@@ -32,7 +32,11 @@ class AICNode(Node):
         self.algorithm_mode = self.get_parameter('algo_mode').get_parameter_value().string_value
         self.get_logger().info(f"--- LAUNCHING AIC NODE IN MODE: {self.algorithm_mode}")
 
-        self.time_delta = 1.0
+        self.declare_parameter('seconds_per_step', 1)
+        self.seconds_per_step = self.get_parameter('seconds_per_step').get_parameter_value().integer_value
+        self.get_logger().info(f"--- with seconds per step t := {self.seconds_per_step}")
+
+        self.time_delta = self.seconds_per_step
         self.startup_delay = 8.0
         self.ticks_to_wait = int(self.startup_delay / self.time_delta)
         self.ticks_passed = 0
@@ -50,7 +54,10 @@ class AICNode(Node):
 
         # Initialize Brain
         self.controller = ActiveInferenceController(logger=self.get_logger(), 
-            algo_mode=self.algorithm_mode)
+            algo_mode=self.algorithm_mode,
+            seconds_per_step=self.seconds_per_step)
+        
+        self.actions_dict=self.controller.actions_dict
         
         # Publishers
         self.metrics_pub = self.create_publisher(Float32MultiArray, '/aic_metrics', 10)
@@ -190,7 +197,7 @@ class AICNode(Node):
     def apply_action(self, action_name):
         """Execute action and stop after time_delta."""
         twist_msg = Twist()
-        vals = ACTION_EFFECTS.get(action_name, {'linear': 0.0, 'angular': 0.0})
+        vals = self.actions_dict.get(action_name, {'linear': 0.0, 'angular': 0.0})
         twist_msg.linear.x = vals['linear']
         twist_msg.angular.z = vals['angular']
         self.cmd_vel_pub.publish(twist_msg)

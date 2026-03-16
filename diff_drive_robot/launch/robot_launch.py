@@ -29,7 +29,7 @@ def generate_launch_description():
     rviz = LaunchConfiguration('rviz')
 
     # Path to default world 
-    world_path = os.path.join(pkg_dir,'worlds', 'world.sdf')
+    world_path = os.path.join(pkg_dir,'worlds', 'world_symmetric.sdf')
 
     # Launch Arguments
     declare_world = DeclareLaunchArgument(
@@ -156,7 +156,7 @@ def generate_launch_description():
         rsp,
         gazebo_server,
         # disable GUI for run_experiment experimental run script
-        # gazebo_client, 
+        gazebo_client, 
         ros_gz_bridge,
         spawn_diff_bot,
         starting_pose_publisher,

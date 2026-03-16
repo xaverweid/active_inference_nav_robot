@@ -21,8 +21,14 @@ def generate_launch_description():
     
     algo_mode_arg = DeclareLaunchArgument(
         'algo_mode',
-        default_value='random_walk',
+        default_value='active_inf_5',
         description='Algorithm mode: active_inf_5, active_inf_500, active_inf_5_h3, random_walk, entropy_min, d_opt_geometry, d_opt_particle'
+    )
+
+    seconds_per_step_arg = DeclareLaunchArgument(
+        'seconds_per_step',
+        default_value= '5',
+        description='Time per run, preferably switch between 1 and 5 seconds'
     )
     
     use_sim_time_arg = DeclareLaunchArgument(
@@ -52,6 +58,7 @@ def generate_launch_description():
         parameters=[
             {'use_sim_time': LaunchConfiguration('use_sim_time')},
             {'algo_mode': LaunchConfiguration('algo_mode')},
+            {'seconds_per_step': LaunchConfiguration('seconds_per_step')},
         ], condition=IfCondition(LaunchConfiguration('enable_aic'))
     )
 
@@ -93,6 +100,7 @@ def generate_launch_description():
         use_sim_time_arg,
         enable_aic_arg,
         enable_viz_arg,
+        seconds_per_step_arg,
         
         # Start nodes first
         aic_control_node,
