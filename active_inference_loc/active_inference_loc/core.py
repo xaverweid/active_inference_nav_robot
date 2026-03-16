@@ -2,7 +2,7 @@ import numpy as np
 import time
 from nav2_msgs.msg import Particle, ParticleCloud
 import scipy
-from .utils import ParticleClusturer, ACTION_EFFECTS, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence, calculate_spatial_entropy, is_pose_in_collision, calculate_bimodality
+from .utils import ParticleClusturer, ACTION_EFFECTS_long, ACTION_EFFECTS_short, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence, calculate_spatial_entropy, is_pose_in_collision, calculate_bimodality_position
 from .models import predict_motion, raycast_scan_numba
 from std_msgs.msg import Float32MultiArray, String
 from geometry_msgs.msg import Pose, Quaternion, Point
@@ -14,15 +14,15 @@ class ActiveInferenceController:
     Handles decision logic for all control modes.
     """
     
-    
-    def __init__(self, logger, algo_mode):
+    def __init__(self, logger, algo_mode, seconds_per_step):
         self.logger = logger
         self.algo_mode = algo_mode
+        self.seconds_per_step = seconds_per_step
         self.metrics_pub = None
         self.particle_data_pub = None
         self.status_pub = None
         self.clusturer = ParticleClusturer()
-        self.time_delta = 1.0  
+        self.time_delta = seconds_per_step # parameter coming from launch init, usually 1 or 5
         self.map_2d = None
         self.dist_map = None
         self.map_metadata = None
@@ -34,8 +34,10 @@ class ActiveInferenceController:
         self.efe_epis_particles = None
         self.efe_epis_weights = None
         self.efe_variances = None
-
-        self.actions_dict = ACTION_EFFECTS
+        if seconds_per_step<3:
+            self.actions_dict = ACTION_EFFECTS_short
+        else:
+            self.actions_dict = ACTION_EFFECTS_long
         self.shannon_entropy = None
         self.shannon_entropy_norm = None
         self.effective_sample_size_percent = None
@@ -48,8 +50,8 @@ class ActiveInferenceController:
         self.wait_streak = 0
         self.clock = None
 
-        self.convergence_threshold = 0.20
-        self.bimodal_score_threshold = 0.30
+        self.convergence_threshold = 0.35
+        self.bimodal_score_threshold = 0.30 # only location, not rotation 
         self.success_counter = 0 # counts how many successes in localization (convergence and non bimodal) have happened, if 3 in a row the run ends with a Success
 
         # --- TUNABLE PARAMETERS ---
@@ -108,7 +110,7 @@ class ActiveInferenceController:
         self.dist_map = self.map_metadata['distance_map']
         self.get_logger().info("Map (2D and dist_map) updated successfully.")
 
-    def update_belief(self, points, weights, dt=1.0):
+    def update_belief(self, points, weights):
         """
         Vectorized update of belief state.
         Also computes estimated position (mean of belief).
@@ -164,20 +166,14 @@ class ActiveInferenceController:
         # Update State
         self.current_particles = points
         self.current_weights = weights
-        self.time_delta = dt
         
         # **Compute estimated position (weighted mean)**
         self.estimated_position = np.average(points[:, :2], axis=0, weights=weights)
         self.estimated_rotation = np.arctan2(
-            np.average(np.sin(points[:, 2]), weights=weights),
-            np.average(np.cos(points[:, 2]), weights=weights)
+            np.average(points[:, 3], weights=weights), # Already sin(yaw)
+            np.average(points[:, 2], weights=weights)  # Already cos(yaw)
         )
-        # Apply the same 270° CW rotation to match map frame
-        # 270° CW = -π/2 radians
-        self.estimated_rotation_map_frame = self.estimated_rotation - np.pi/2
-        # Normalize to [-π, π]
-        self.estimated_rotation_map_frame = (self.estimated_rotation_map_frame + np.pi) % (2 * np.pi) - np.pi
-
+        
         # **Compute position error: distance from actual real position to AMCL estimate**
         # Actual real position = spawn_pose + true_position (offset from spawn)
         if self.starting_pose is not None and self.ground_truth_pose is not None:
@@ -195,20 +191,20 @@ class ActiveInferenceController:
             
             # Yaw is additive (angles add)
             actual_real_yaw = self.starting_pose[2] + self.ground_truth_pose[2]
+            actual_real_yaw = (actual_real_yaw + np.pi) % (2 * np.pi) - np.pi # Standard wrap
             self.actual_real_yaw = actual_real_yaw
             
             # Calculate errors
             self.position_error = np.linalg.norm(self.estimated_position - actual_real_position)
-            rotational_error = abs((self.estimated_rotation_map_frame - actual_real_yaw + np.pi) % (2 * np.pi) - np.pi)
+            rotational_error = abs((self.estimated_rotation - actual_real_yaw + np.pi) % (2 * np.pi) - np.pi)            
             self.rotational_error = rotational_error
             
             # Logging
-            '''
-            self.get_logger().info(f"Starting Position: {self.starting_pose[:2]}, Ground Truth Position: {self.ground_truth_pose[:2]}, Actual Real Position: {actual_real_position}")
-            self.get_logger().info(f"Estimated Position: {self.estimated_position}, Actual Real Position: {actual_real_position}, Positional Error: {self.position_error:.2f}")
-            self.get_logger().info(f"Starting Yaw: {self.starting_pose[2]:.2f}, Ground Truth Yaw: {self.ground_truth_pose[2]:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}")
-            self.get_logger().info(f"Estimated Yaw (raw): {self.estimated_rotation:.2f}, Estimated Yaw (map frame): {self.estimated_rotation_map_frame:.2f}, Rotational Error: {self.rotational_error:.2f}")
-            '''
+            # self.get_logger().info(f"Starting Position: {self.starting_pose[:2]}, Ground Truth Position: {self.ground_truth_pose[:2]}, Actual Real Position: {actual_real_position}")
+            # self.get_logger().info(f"Estimated Position: {self.estimated_position}, Actual Real Position: {actual_real_position}, Positional Error: {self.position_error:.2f}")
+            # self.get_logger().info(f"Starting Yaw: {self.starting_pose[2]:.2f}, Ground Truth Yaw: {self.ground_truth_pose[2]:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}")
+            # self.get_logger().info(f"Estimated Yaw (raw): {self.estimated_rotation:.2f}, Estimated Yaw (map frame): {self.estimated_rotation_map_frame:.2f}, Rotational Error: {self.rotational_error:.2f}")
+            
         else:
             self.get_logger().warn("Controller Error: Starting Pose or Ground Truth Pose not available")
         
@@ -239,6 +235,8 @@ class ActiveInferenceController:
             return self._run_active_inference(n_raycast_particles=5)
         elif self.algo_mode == "active_inf_500":
             return self._run_active_inference(n_raycast_particles=500)
+        elif self.algo_mode == "active_inf_5_h3":
+            return self._run_active_inference(n_raycast_particles=5, n_time_horizon=3)
         elif self.algo_mode == "random_walk":
             return self._run_random_walk()
         elif self.algo_mode == "entropy_min":
@@ -252,7 +250,7 @@ class ActiveInferenceController:
             self.publish_status(f"FAILURE: Unknown mode '{self.algo_mode}'")
             return "WAIT"
 
-    def _run_active_inference(self, n_raycast_particles=500, n_time_horizon=1, only_epistemic=False):  
+    def _run_active_inference(self, n_raycast_particles=5, n_time_horizon=1, only_epistemic=False):  
         """Active Inference with expected free energy.
         Input: 
         - n_raycast_particles: Number of sampled particles (5, 50, 500) for epistemic. pragmatic always 500
@@ -264,9 +262,11 @@ class ActiveInferenceController:
 
         # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
         gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
+        self.efe_variances = gmm_variances
+
         
         # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
-        self.bimodal_score, self.is_bimodal = calculate_bimodality(gmm_poses, gmm_weights)
+        self.bimodal_score, self.is_bimodal = calculate_bimodality_position(gmm_poses, gmm_weights)
         
         termination_action = self.check_termination_conditions()
         if termination_action:
@@ -298,46 +298,112 @@ class ActiveInferenceController:
         
         self.efe_epis_particles = particles_epistemic
         self.efe_epis_weights = weights_epistemic
-        self.efe_variances = gmm_variances
 
         # PRAGMATIC
         # Importance Sampling always with 500 (max) 
-        sample_size_pragmatic = min(num_total_p, 500)
-        sample_indices_pragmatic = np.random.choice(num_total_p, sample_size_pragmatic, replace=False)
-        sample_particles_pragmatic = initial_particles[sample_indices_pragmatic]
-        sample_weights_pragmatic = initial_weights[sample_indices_pragmatic]
-        sample_weights_pragmatic = np.ones(sample_size_pragmatic) / sample_size_pragmatic
-        initial_poses_pragmatic = np.copy(sample_particles_pragmatic)
-        initial_weights_pragmatic = np.copy(sample_weights_pragmatic)
-
-        #Loop
-        efe_scores = {}
-        details = {} 
-
-        for action in self.actions_dict.keys():
-            actual_duration = self.time_delta - 0.1
+        # With Time horizon use GMM particles for pragmatic as well
+        if n_time_horizon == 1:
+            sample_size_pragmatic = min(num_total_p, 500)
+            p_dist_pragmatic = initial_weights / np.sum(initial_weights)
             
-            pred_clusters = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration) for p in particles_epistemic])
-            raw_epistemic = self.calculate_efe_epistemic(pred_clusters, weights_epistemic)
+            sample_indices_pragmatic = np.random.choice(
+                num_total_p, sample_size_pragmatic, replace=True, p=p_dist_pragmatic
+            )
+            particles_pragmatic = initial_particles[sample_indices_pragmatic]
+            weights_pragmatic = np.ones(sample_size_pragmatic) / sample_size_pragmatic
+            
+            initial_poses_pragmatic = np.copy(particles_pragmatic)
+            initial_weights_pragmatic = np.copy(weights_pragmatic)
+        else:
+            initial_poses_pragmatic = np.copy(particles_epistemic)
+            initial_weights_pragmatic = np.copy(weights_epistemic)
+
+        actions = list(self.actions_dict.keys())
+
+        # ── EFE evaluation — single step or horizon tree ─────────────
+        def evaluate_efe_single(particles_ep, weights_ep, action):
+            """Compute EFE for one action at one step."""
+            pred_ep = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta - 0.1)
+                                    for p in particles_ep])
+            raw_epistemic = self.calculate_efe_epistemic(pred_ep, weights_ep)
 
             if only_epistemic:
                 raw_pragmatic = 0.0
-            
             else:
-                pred_particles = np.array([predict_motion(p, action, self.actions_dict, dt=actual_duration) for p in initial_poses_pragmatic])
-                raw_pragmatic = self.calculate_efe_pragmatic(pred_particles, initial_weights_pragmatic)
+                pred_pr       = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta - 0.1)
+                                        for p in initial_poses_pragmatic])
+                raw_pragmatic = self.calculate_efe_pragmatic(pred_pr, initial_weights_pragmatic)
 
-            total_efe = (self.alpha_epistemic * raw_epistemic) + (self.beta_pragmatic * raw_pragmatic)
-            efe_scores[action] = total_efe
-            details[action] = {'epistemic': self.alpha_epistemic * raw_epistemic, 'pragmatic': self.beta_pragmatic * raw_pragmatic}
-            # self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {raw_epistemic:.2f}, Pragmatic: {raw_pragmatic:.2f})")
+            return (self.alpha_epistemic * raw_epistemic) + (self.beta_pragmatic * raw_pragmatic), \
+                self.alpha_epistemic * raw_epistemic, \
+                self.beta_pragmatic * raw_pragmatic
         
+        gamma = 0.9  # discount factor for future EFE steps
+        
+        def horizon_search(particles_ep, weights_ep, particles_pr, weights_pr, depth):
+            action_efes = {}
+            for action in actions:
+
+                # ── Epistemic (5 GMM clusters) ────────────────────────
+                pred_ep       = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta - 0.1)
+                                        for p in particles_ep])
+                raw_epistemic = self.calculate_efe_epistemic(pred_ep, weights_ep)
+
+                # ── Pragmatic (500 particles, propagated correctly) ───
+                if only_epistemic:
+                    raw_pragmatic = 0.0
+                    pred_pr = None
+                else:
+                    pred_pr       = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta-0.1)
+                                            for p in particles_pr])
+                    raw_pragmatic = self.calculate_efe_pragmatic(pred_pr, weights_pr)
+
+                efe_now = (self.alpha_epistemic * raw_epistemic) + (self.beta_pragmatic * raw_pragmatic)
+
+                if depth > 1:
+                    # Reuse pred_ep and pred_pr — no recomputation needed
+                    future_efes = horizon_search(
+                        pred_ep, weights_ep.copy(),
+                        pred_pr if pred_pr is not None else particles_pr,
+                        weights_pr.copy(),
+                        depth - 1
+                    )
+                    best_future = min(future_efes.values())
+                else:
+                    best_future = 0.0
+
+                action_efes[action] = efe_now + gamma * best_future
+                #self.get_logger().info(f"For Action {action} in horizon search def: efe_now = {efe_now}. best_future = {best_future}")
+            return action_efes
+                
+        # ── Run search ───────────────────────────────────────────────
+        if n_time_horizon == 1:
+            # Original single-step logic — no tree overhead
+            efe_scores = {}
+            details    = {}
+            for action in actions:
+                total_efe, ep, pr       = evaluate_efe_single(particles_epistemic, weights_epistemic, action)
+                efe_scores[action]      = total_efe
+                details[action]         = {'epistemic': ep, 'pragmatic': pr}
+                # self.get_logger().info("Single Time Horizon")
+                # self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {ep:.2f}, Pragmatic: {pr:.2f})")
+
+        else:
+            # Horizon tree search — GMM clusters only
+            efe_scores = horizon_search(particles_epistemic, weights_epistemic, 
+                                        initial_poses_pragmatic, initial_weights_pragmatic, n_time_horizon)
+            # Recompute details for the best action at depth=1 for logging
+            details = {}
+            for action in actions:
+                _, ep, pr          = evaluate_efe_single(particles_epistemic, weights_epistemic, action)
+                details[action]    = {'epistemic': ep, 'pragmatic': pr}
+                # self.get_logger().info(f"Final EFE For Action {action}: ep:{ep} and pr:{pr}")
         best_action = min(efe_scores, key=efe_scores.get)
         best_detail = details[best_action]
 
         # --- PHASE 3: FINALIZE & PUBLISH ---
         # Prevent WAIT from being chosen more than 2 times in a row
-        best_action = self.handle_wait_streak(best_action, efe_scores, list(self.actions_dict.keys()))
+        best_action = self.handle_wait_streak(best_action, efe_scores, actions)
 
         # Store for logging
         self.runtime_counter += 1
@@ -349,9 +415,9 @@ class ActiveInferenceController:
         
         total_time = time.time() - start_time
         # self.get_logger().warn(f"Total Time AIC Calculation (efe evaluation): {total_time:.2f}s")
-
+        # self.get_logger().info(f"Final EFE Scores: {efe_scores}. Time for efe calc is {total_time}")
         if total_time > self.time_delta:
-            self.get_logger().warn(f"Slowdown: {total_time:.2f}s")
+            self.get_logger().warn(f"Slowdown: {total_time:.2f}s. Was higher than time_delta of {self.time_delta}")
         
         return best_action
     
@@ -418,9 +484,10 @@ class ActiveInferenceController:
         
         # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
         gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
+        self.efe_variances = gmm_variances
         
         # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
-        self.bimodal_score, self.is_bimodal = calculate_bimodality(gmm_poses, gmm_weights)
+        self.bimodal_score, self.is_bimodal = calculate_bimodality_position(gmm_poses, gmm_weights)
         
         termination_action = self.check_termination_conditions()
         if termination_action:
@@ -457,7 +524,7 @@ class ActiveInferenceController:
                 if not is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
                     safe_actions.append(action)
             
-            self.get_logger().info(f"Collision filter: {len(safe_actions)}/{len(available_actions)} safe")
+            # self.get_logger().info(f"Collision filter: {len(safe_actions)}/{len(available_actions)} safe")
         else:
             # Position not available yet, skip collision checking
             self.get_logger().warn("Actual position not available, using all actions")
@@ -466,7 +533,7 @@ class ActiveInferenceController:
         best_action = np.random.choice(safe_actions)
         # Random walk has no "EFE components", so we set them to neutral for the CSV/Logs
         efe_scores = {action: 0.0 for action in available_actions}
-        best_detail = {'epistemic': 0.0, 'pragmatic': 0.0}
+        best_detail = {'epistemic': -1.0, 'pragmatic': -1.0}
 
         # --- PHASE 3: FINALIZE & PUBLISH ---
         # Prevent WAIT from being chosen more than 2 times in a row
@@ -484,7 +551,7 @@ class ActiveInferenceController:
         
         total_time = time.time() - start_time
         if total_time > self.time_delta:
-            self.get_logger().warn(f"Slowdown in Random Walk: {total_time:.2f}s")
+            self.get_logger().warn(f"Slowdown in Random Walk: {total_time:.2f}s. Was higher than time_delta of {self.time_delta}")
         
         return best_action
     
@@ -521,9 +588,10 @@ class ActiveInferenceController:
         
         # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
         gmm_poses, gmm_weights, gmm_variances = self.update_belief_metrics()
+        self.efe_variances = gmm_variances
         
         # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
-        self.bimodal_score, self.is_bimodal = calculate_bimodality(gmm_poses, gmm_weights)
+        self.bimodal_score, self.is_bimodal = calculate_bimodality_position(gmm_poses, gmm_weights)
         
         termination_action = self.check_termination_conditions()
         if termination_action:
@@ -768,6 +836,7 @@ class ActiveInferenceController:
             best_detail (dict): {'epistemic': float, 'pragmatic': float}.
             gmm_poses and gmm_weights: coming from the gmm (5) for bimodality analysis
         """
+
         if self.metrics_pub is None:
             return
 
@@ -844,6 +913,10 @@ class ActiveInferenceController:
             float(peak2_y), #26
             float(peak2_yaw), #27
             float(peak_distance), #28
+            float(self.convergence_threshold),  #29
+            float(self.bimodal_score_threshold), #30
+            float(self.planning_sigma),   # 31
+            float(self.spatial_entropy_res), #32
         ]
 
         self.metrics_pub.publish(metrics_msg)

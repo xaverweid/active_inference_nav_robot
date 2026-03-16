@@ -14,7 +14,7 @@ print(inspect.signature(GaussianMixture.fit))
 # Dictionary mapping action names to Twist components
 # WATCH OUT, these must match your motion model exactly!
 
-ACTION_EFFECTS = {
+ACTION_EFFECTS_short = {
     'WAIT':          {'linear': 0.0,  'angular': 0.0},
     'FORWARD_SMALL': {'linear': 0.15, 'angular': 0.0},
     'FORWARD_LARGE': {'linear': 0.30, 'angular': 0.0},
@@ -25,6 +25,24 @@ ACTION_EFFECTS = {
     'BACKWARD_SMALL':{'linear': -0.15,'angular': 0.0},
 }
 
+# These Action effects are used when t>=3, meaning the robot takes bigger steps at once
+# Assuming t = 5.0 seconds per step, keep in mind that 0.1 sec is deducted for calculation
+# Total distance = speed * (5.0 - 0.1)
+ACTION_EFFECTS_long = {
+    'WAIT':          {'linear': 0.0,   'angular': 0.0},
+    # Moves 0.75m
+    'FORWARD_SMALL': {'linear': 0.15,  'angular': 0.0}, 
+    # Moves 1.5m
+    'FORWARD_LARGE': {'linear': 0.30,  'angular': 0.0}, 
+    # Rotates ~90 degrees (1.57 radians)
+    'ROTATE_LEFT':   {'linear': 0.0,   'angular': 0.314}, 
+    'ROTATE_RIGHT':  {'linear': 0.0,   'angular': -0.314},
+    # Wide arc: Moves 0.75m and turns ~45 degrees
+    'TURN_LEFT':     {'linear': 0.15,  'angular': 0.157}, 
+    'TURN_RIGHT':    {'linear': 0.15,  'angular': -0.157},
+    # Moves 0.5m backward
+    'BACKWARD_SMALL':{'linear': -0.10, 'angular': 0.0}, 
+}
 # Particle Clustering Utility
 
 class ParticleClusturer:
@@ -215,7 +233,6 @@ def get_proximity_risk(pose, map_metadata, safe_dist=0.5, robot_radius=0.18, sig
 
     # 2. Boundary Check
     if not (0 <= grid_x < map_metadata['width'] and 0 <= grid_y < map_metadata['height']):
-        print("Pose out of map bounds for risk calculation.")
         return 1.0 # Out of bounds is maximum risk
 
     # 3. Distance Lookup (meters)
@@ -287,29 +304,42 @@ def calculate_shannon_entropy(weights):
 
 def calculate_convergence(particles, weights):
     """
-    Computes the total uncertainty of all the particles.
+    Computes total uncertainty of all particles in position AND orientation.
     Args:
-        particles: (N, 4) array of particles
-        weights: (N,) array of weights
-    Returns: Standard deviation in meters (lower is more converged).
+        particles: (N, 4) array -> [x, y, cos(yaw), sin(yaw)]
+        weights:   (N,) array of weights
+    Returns: Combined std in metres+radians (lower = more converged).
     """
     if len(particles) == 0:
-        return 100.0 # High uncertainty if no clusters
-    
-    # Enforce NumPy arrays
-    particles = np.asarray(particles)
-    weights = np.asarray(weights)
-    weights = weights / (np.sum(weights) + 1e-12)
+        return 100.0
 
-   # 1. Variance BETWEEN clusters
-    coords = particles[:, :2]
+    particles = np.asarray(particles)
+    weights   = np.asarray(weights)
+    weights   = weights / (np.sum(weights) + 1e-12)
+
+    # ── Positional uncertainty (your existing logic) ──────────────
+    coords        = particles[:, :2]
     weighted_mean = np.average(coords, axis=0, weights=weights)
-    sq_diff = (coords - weighted_mean)**2
-    variance_between_means = np.average(sq_diff, axis=0, weights=weights)
-    
-    # 4. Total Standard Deviation (Euclidean)
-    total_std = np.sqrt(np.sum(variance_between_means))
-    
+    sq_diff       = (coords - weighted_mean) ** 2
+    var_pos       = np.average(sq_diff, axis=0, weights=weights)
+    std_pos       = np.sqrt(np.sum(var_pos))  # scalar, metres
+
+    # ── Orientational uncertainty (new) ───────────────────────────
+    # Circular mean of yaw using cos/sin components
+    mean_cos = np.sum(weights * particles[:, 2])
+    mean_sin = np.sum(weights * particles[:, 3])
+    # Resultant vector length R: 1.0 = perfectly aligned, 0.0 = maximally spread
+    R = np.sqrt(mean_cos**2 + mean_sin**2)
+    # Circular std: 0.0 = no spread, up to ~2.57 rad = maximum spread
+    std_yaw = np.sqrt(-2.0 * np.log(R + 1e-12))  # radians
+
+    # ── Combined metric ───────────────────────────────────────────
+    # Scale yaw by a factor to make it comparable to positional std
+    # yaw_weight=0.5 means full 180° flip contributes ~1.28m equivalent
+    # increase yaw_weight to make convergence stricter on orientation
+    yaw_weight = 1  # tune this
+    total_std  = std_pos + yaw_weight * std_yaw
+
     return float(total_std)
 
 def calculate_spatial_entropy(particles, weights, xy_resolution=0.2):
@@ -349,7 +379,7 @@ def calculate_spatial_entropy(particles, weights, xy_resolution=0.2):
     
     return float(spatial_entropy)
 
-def calculate_bimodality(gmm_poses, gmm_weights):
+def calculate_bimodality_position(gmm_poses, gmm_weights):
     if len(gmm_weights) < 2:
         return 0.0, False
     gmm_cluster_analysis = np.copy(gmm_poses)

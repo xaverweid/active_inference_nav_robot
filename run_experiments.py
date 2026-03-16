@@ -38,7 +38,7 @@ class ExperimentLogger(Node):
         'is_bimodal', 
         'peak1_x', 'peak1_y', 'peak1_yaw',
         'peak2_x', 'peak2_y', 'peak2_yaw',
-        'peak_distance'
+        'peak_distance',
         ])
 
         self.metrics = None
@@ -91,6 +91,7 @@ class ExperimentLogger(Node):
                 self.metrics[26] if len(self.metrics) > 26 else -1.0,  # peak2_y
                 self.metrics[27] if len(self.metrics) > 27 else -1.0,  # peak2_yaw
                 self.metrics[28] if len(self.metrics) > 28 else -1.0,  # peak_distance
+
             ])
             self.current_step += 1
             self.csv_file.flush()
@@ -124,24 +125,40 @@ def load_poses_from_csv(poses_file_path):
     return poses
 
 def cleanup_processes(sim_proc, ctrl_proc):
-    """Kill all ROS and Gazebo processes aggressively."""
     print("Cleaning up system processes...")
-    try:
-        os.killpg(os.getpgid(sim_proc.pid), signal.SIGTERM)
-        os.killpg(os.getpgid(ctrl_proc.pid), signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-
-    # Kill Gazebo and Ruby (the engine Jazzy uses)
-    # Using -f (full command) ensures we catch the right processes
-    subprocess.run(["pkill", "-9", "-f", "gz"], stderr=subprocess.DEVNULL)
-    subprocess.run(["pkill", "-9", "-f", "ruby"], stderr=subprocess.DEVNULL)
     
-    # Refresh the ROS 2 graph
+    # 1. Graceful SIGTERM first
+    for proc in [sim_proc, ctrl_proc]:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    time.sleep(2)
+    
+    # 2. Force kill anything remaining
+    for proc in [sim_proc, ctrl_proc]:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    # 3. Kill ALL relevant ROS/Gazebo processes by name
+    for pattern in ["gz", "ruby", "gzserver", "gzclient", 
+                    "robot_state_publisher", "amcl", 
+                    "nav2", "aic_node", "diff_drive"]:
+        subprocess.run(["pkill", "-9", "-f", pattern], stderr=subprocess.DEVNULL)
+    
+    # 4. Clear shared memory (Gazebo uses this heavily)
+    subprocess.run("ipcs -m | awk 'NR>3 {print $2}' | xargs -r ipcrm -m", 
+                   shell=True, stderr=subprocess.DEVNULL)
+    
+    # 5. Restart ROS2 daemon
     subprocess.run(["ros2", "daemon", "stop"], stderr=subprocess.DEVNULL)
+    time.sleep(1)
     subprocess.run(["ros2", "daemon", "start"], stderr=subprocess.DEVNULL)
     
-    time.sleep(5)
+    # 6. Longer wait — give OS time to release ports/sockets
+    time.sleep(8)  # was 5
 
 active_sim_proc = None
 active_ctrl_proc = None
@@ -169,17 +186,28 @@ def run_benchmarking():
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["active_inf_500"]#, "active_inf_500", "random_walk", "entropy_min"]  
-    
-    summary_filename = f'summary_results_{RUN_TIMESTAMP}.csv'
-    summary_f = open(summary_filename, mode='w')
-    summary_writer = csv.writer(summary_f)
-    summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta'])
+    algos = ["random_walk", "active_inf_5_h3"]#, "active_inf_5", "active_inf_500"]#, "active_inf_5_h3", "random_walk", "entropy_min"]  
     
     for algo in algos:
+        
+        algo_dir = os.path.join(os.getcwd(), algo)
+        os.makedirs(algo_dir, exist_ok=True)
+        
+        summary_filename = os.path.join(algo_dir, f"summary_{algo}_{RUN_TIMESTAMP}.csv")
+        summary_f = open(summary_filename, mode='w')
+        summary_writer = csv.writer(summary_f)
+        summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta',
+                                'convergence_threshold', 'bimodal_score_threshold',
+                                'planning_sigma', 'spatial_entropy_res'])
+
         for i, p in enumerate(poses[0:1000], start=0):
 
-            trial_id = f"trial_{algo}_p{i+1:04d}_{RUN_TIMESTAMP}"
+            # Hard reset every 100 runs: sleep longer to let system breathe
+            if i > 0 and i % 100 == 0:
+                print(f"[PERIODIC RESET] Run {i} — extended cooldown...")
+                time.sleep(30)  # let OS fully settle
+
+            trial_id = os.path.join(algo_dir, f"trial_{algo}_p{i+1:04d}_{RUN_TIMESTAMP}")
             print(f"\n{'='*60}")
             print(f">>> Starting {trial_id}")
             print(f"{'='*60}")
@@ -224,7 +252,12 @@ def run_benchmarking():
                
             summary_writer.writerow([algo, i+1, logger.status, logger.current_step, 
                                      logger.metrics[3] if logger.metrics and len(logger.metrics) > 3 else -1.0,  # alpha
-                                     logger.metrics[4] if logger.metrics and len(logger.metrics) > 4 else -1.0])  # beta
+                                     logger.metrics[4] if logger.metrics and len(logger.metrics) > 4 else -1.0,  # beta
+                                     logger.metrics[29] if logger.metrics and len(logger.metrics) > 29 else -1.0, # convergence_threshold            
+                                     logger.metrics[30] if logger.metrics and len(logger.metrics) > 30 else -1.0, # bimodal_score_threshold       
+                                     logger.metrics[31] if logger.metrics and len(logger.metrics) > 31 else -1.0, # planning_sigma           
+                                     logger.metrics[32] if logger.metrics and len(logger.metrics) > 32 else -1.0, # spatial_entropy_res
+            ])
             summary_f.flush()
 
             logger.csv_file.close()
@@ -234,7 +267,8 @@ def run_benchmarking():
             print(f"✓ Finished {trial_id}: {logger.status} (steps={logger.current_step})")
             print(f"  CSV saved: {trial_id}.csv")
 
-    summary_f.close()
+        summary_f.close()
+
     rclpy.shutdown()
     print(f"\n{'='*60}")
     print("✓ All experiments completed!")

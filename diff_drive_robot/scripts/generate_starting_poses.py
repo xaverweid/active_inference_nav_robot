@@ -5,27 +5,32 @@ import os
 from ament_index_python.packages import get_package_share_directory
 
 def load_map(map_yaml_path):
-    """Load map from YAML file and return map data, resolution, and origin."""
     with open(map_yaml_path, 'r') as f:
         map_data = yaml.safe_load(f)
-    
-    # Get the directory containing the YAML file
-    map_dir = os.path.dirname(map_yaml_path)
-    
-    # Construct full path to image
+
+    map_dir      = os.path.dirname(map_yaml_path)
     map_img_path = os.path.join(map_dir, map_data['image'])
-    
-    # Load the map image
-    map_img = Image.open(map_img_path).convert('L')  # Convert to grayscale
-    map_array = np.array(map_img)
-    
-    # In occupancy grids: 255 = free, 0 = occupied, 205 = unknown
-    # Convert to binary: 1 = free, 0 = occupied/unknown
-    free_space = (map_array >= 250).astype(np.uint8)
-    
+    map_img      = Image.open(map_img_path).convert('L')
+    map_array    = np.array(map_img)
+
+    occupied_thresh = map_data.get('occupied_thresh', 0.65)
+    free_thresh     = map_data.get('free_thresh', 0.196)
+    negate          = map_data.get('negate', 0)
+
+    # Convert pixel to probability the same way ROS does
+    if negate:
+        probability = map_array / 255.0
+    else:
+        probability = (255 - map_array) / 255.0
+
+    # Match ROS nav2 interpretation exactly
+    # free    = probability < free_thresh
+    # unknown = free_thresh <= probability <= occupied_thresh  
+    # occupied = probability > occupied_thresh
+    free_space = (probability < free_thresh).astype(np.uint8)  # strict: only confirmed free
+
     resolution = map_data['resolution']
-    origin = map_data['origin'][:2]  # [x, y] in meters
-    
+    origin     = map_data['origin'][:2]
     return free_space, resolution, origin
 
 def world_to_grid(x, y, resolution, origin):
@@ -40,7 +45,7 @@ def grid_to_world(grid_x, grid_y, resolution, origin):
     y = grid_y * resolution + origin[1]
     return x, y
 
-def is_valid_position(x, y, free_space, resolution, origin, min_clearance=0.25):
+def is_valid_position(x, y, free_space, resolution, origin, min_clearance=0.28):
     """
     Check if a position is valid (free space with minimum clearance from walls).
     
@@ -49,7 +54,7 @@ def is_valid_position(x, y, free_space, resolution, origin, min_clearance=0.25):
         free_space: Binary occupancy grid (1 = free, 0 = occupied)
         resolution: Map resolution in meters/pixel
         origin: Map origin [x, y] in meters
-        min_clearance: Minimum distance from walls in meters (default: 0.25m)
+        min_clearance: Minimum distance from walls in meters (default: 0.28m)
     
     Returns:
         bool: True if position is valid
@@ -87,14 +92,16 @@ def is_valid_position(x, y, free_space, resolution, origin, min_clearance=0.25):
     
     return True
 
-def generate_valid_starting_poses(map_yaml_path, num_poses=1000, min_clearance=0.25):
+def generate_valid_starting_poses(map_yaml_path, num_poses=1000, min_clearance=0.28):
     """
     Generate valid random starting poses with minimum wall clearance.
     
     Args:
         map_yaml_path: Path to map YAML file
         num_poses: Number of valid poses to generate
-        min_clearance: Minimum distance from walls in meters (default: 0.25m)
+        min_clearance: Minimum distance from walls in meters (default: 0.28m = robot_radius + safety_margin)
+            see src/active_inference_nav_robot/active_inference_loc/active_inference_loc/utils.py def is_pose_in_collision(pose, map_metadata, distance_map, robot_radius=0.18, safety_margin=0.05)
+
     
     Returns:
         List of tuples: [(x, y, yaw), ...]
@@ -167,11 +174,11 @@ if __name__ == '__main__':
         'starting_poses_1000.csv'
     )
     
-    # Generate poses with 0.25m clearance (15cm robot radius + 10cm safety)
+    # Generate poses with 0.28m clearance (15cm robot radius + 8cm safety + 5cm grid cell rounding error)
     poses = generate_valid_starting_poses(
         map_yaml_path=map_yaml_path,
         num_poses=1000,
-        min_clearance=0.25
+        min_clearance=0.28
     )
     
     # Save to CSV
