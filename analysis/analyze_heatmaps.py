@@ -1,10 +1,5 @@
 """
-Heatmap Analysis for Active Inference Localization Experiments
-Produces:
-  1. Visited pose heatmap (where the robot physically was)
-  2. Gaze/direction heatmap (where the algorithm wanted to move)
-  3. Quiver overlay (mean intended direction per map cell)
-All plots split by pre/post convergence.
+Analysis for Active Inference Localization Experiments
 
 Usage:
   python analysis/analyze_heatmaps.py
@@ -51,7 +46,7 @@ SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT   = os.path.dirname(SCRIPT_DIR)          # active_inference_nav_robot/
 PARENT_ROOT = os.path.dirname(REPO_ROOT)           
 
-sim_id = "numba-5" # adjust to run numba-5, numba-500, numba-5-3
+sim_id = "SymmetricalMap/random_walk" # adjust to run active_inf_5, active_inf_5_h3, random_walk
 CSV_DIR = os.path.join(PARENT_ROOT, "results", sim_id) # ../results/ — outside repo
 OUTPUT_DIR = os.path.join(PARENT_ROOT, "figures", sim_id)  # ../figures/ — outside repo
 MAP_PATH   = os.path.join(REPO_ROOT, "diff_drive_robot", "maps", "my_map.pgm") 
