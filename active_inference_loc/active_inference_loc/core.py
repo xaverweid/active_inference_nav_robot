@@ -621,77 +621,80 @@ class ActiveInferenceController:
         initial_particles = np.copy(self.current_particles)
         initial_weights = np.copy(self.current_weights)
         available_actions = list(self.actions_dict.keys())
+        # Scoring uses GMM only — same as epistemic in active inference
+        # Collision avoidance is handled separately by checkpoint loop below
+        scoring_particles = np.copy(gmm_poses)
+        scoring_weights   = np.copy(gmm_weights)
+
+        if self.actual_real_position is None or self.actual_real_yaw is None:
+            self.get_logger().warn("Real position not available, returning WAIT")
+            return "WAIT"
+        
         current_pose_3d = [self.actual_real_position[0], self.actual_real_position[1], self.actual_real_yaw]
+        pose_4d = np.array([current_pose_3d[0], current_pose_3d[1],
+                    np.cos(current_pose_3d[2]), np.sin(current_pose_3d[2])])
         
         # Filter safe actions (Same logic as your Random Walk)
-        f_maps = self._get_fisher_maps
         safe_actions = []
         action_scores = {}
+        res = float(self.map_metadata['resolution'])
+        ox = float(self.map_metadata['origin_x'])
+        oy = float(self.map_metadata['origin_y'])
         
         for action in available_actions:
-            # Predict resulting pose for collision check
-            pose_4d = np.array([current_pose_3d[0], current_pose_3d[1], np.cos(current_pose_3d[2]), np.sin(current_pose_3d[2])])
+            # Collision filter (real pose, checkpoint loop, absolute collision avoidance)
+            action_is_safe = True
+            for checkpoint in self.collision_checkpoints:
+                predicted_pose = predict_motion(pose_4d, action, self.actions_dict, dt=checkpoint)
+                pred_xyz = [predicted_pose[0], predicted_pose[1],
+                            np.arctan2(predicted_pose[3], predicted_pose[2])]
+                if is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
+                    action_is_safe = False
+                    break
+            if not action_is_safe:
+                continue
+            safe_actions.append(action)
+            # --- SCORING LOGIC ---
+            # ── Scoring (GMM epistemic particles only) ─────────────────────
+            try:
+                pred_particles = predict_motion_batch(scoring_particles, action, self.actions_dict, dt=self.time_delta_sim)
 
-            pred_pose_4d = predict_motion(pose_4d, action, self.actions_dict, dt=self.time_delta_sim)
-            pred_xyz = [pred_pose_4d[0], pred_pose_4d[1], np.arctan2(pred_pose_4d[3], pred_pose_4d[2])]
-
-            if not is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
-                safe_actions.append(action)
+                if mode == 'geometry':
+                    action_scores[action] = sum(
+                        self._get_fisher_info_det(p[0], p[1]) * scoring_weights[i]
+                        for i, p in enumerate(pred_particles)
+                    )
                 
-                px = int((pred_xyz[0] - self.map_metadata['origin_x']) / self.map_metadata['resolution'])
-                py = int((pred_xyz[1] - self.map_metadata['origin_y']) / self.map_metadata['resolution'])
-                # --- SCORING LOGIC ---
-             
-                try:
-                    if mode == 'geometry':
-                    # geometry based
-                        particle_set = initial_particles
-                        #TODO: make sure for the particle beliefs, not only for 1
-                        action_scores[action] = sum(self._get_fisher_info_det(particle for particle in particle_set))
-                
-                    else:
-                        # particle based
-                        # Propagate all particles through this action
-                        fisher_sum = np.zeros((3, 3))  # includes yaw
+                else:
+                    # particle based
+                    # Propagate all particles through this action
+                    # TODO: check which particles we need, collision is handles, so i assume only epistemic particles should assimilate aic control
+                    fisher_sum = np.zeros((3, 3))
+                    for i in range(len(pred_particles)):
+                        w          = scoring_weights[i]
+                        pred_p     = pred_particles[i]
+                        pred_p_xyz = [pred_p[0], pred_p[1], np.arctan2(pred_p[3], pred_p[2])]
+                        pred_p_4d  = np.array([[pred_p[0], pred_p[1], pred_p[2], pred_p[3]]])
+                        pred_scans = raycast_scan_numba(
+                            poses_4d=pred_p_4d, dist_map=self.dist_map,
+                            res=res, ox=ox, oy=oy)
+                        F           = self._compute_fisher_from_scan(pred_p_xyz, pred_scans[0])
+                        fisher_sum += w * F
 
-                        for i, particle in enumerate(initial_particles):
-                            w = initial_weights[i]
+                    map_width_m  = self.map_metadata['width']  * self.map_metadata['resolution']
+                    map_height_m = self.map_metadata['height'] * self.map_metadata['resolution']
+                    yaw_scale    = 0.5 * max(map_width_m, map_height_m)
+                    S            = np.diag([1.0, 1.0, yaw_scale])
+                    fisher_scaled = S @ fisher_sum @ S
+                    action_scores[action] = float(np.linalg.det(fisher_scaled))
+                            
+            except (IndexError, Exception) as e:
+                self.get_logger().warn(f"Scoring failed for {action}: {e}")
+                action_scores[action] = -1e9
 
-                            # Particle is [x, y, cos(yaw), sin(yaw)] — adjust if different
-                            pred_p = predict_motion(particle, action, self.actions_dict, dt=self.time_delta_sim)
-                            pred_p_xyz = [pred_p[0], pred_p[1], np.arctan2(pred_p[3], pred_p[2])]
-                            # TODO: Incorporated the raycast scan numba, check if logic works for d_opt
-                            # Keep in mind that here i do it per particle, but raycast scan actually takes a set of particles
-                            res = float(self.map_metadata['resolution'])
-                            ox = float(self.map_metadata['origin_x'])
-                            oy = float(self.map_metadata['origin_y'])
-                            pred_scans = raycast_scan_numba(
-                                poses_4d=np.asarray(pred_p_xyz, dtype=np.float64),
-                                dist_map=self.dist_map,
-                                res=res,
-                                ox=ox,
-                                oy=oy,
-                            )                            
-
-                            # Compute Fisher info from this scan (your existing per-pose method)
-                            F = self._compute_fisher_from_scan(pred_p_xyz, pred_scans)  # shape (2,2) or (3,3)
-
-                            fisher_sum += w * F
-
-                        # Normalizing Fisher Matrix since yaw and meters scales differ
-                        # Use half map's approximate diameter as the scale
-                        map_width_m = self.map_metadata['width'] * self.map_metadata['resolution']
-                        map_height_m = self.map_metadata['height'] * self.map_metadata['resolution']
-                        yaw_scale = 0.5 * max(map_width_m, map_height_m)
-                        scale = np.array([1.0, 1.0, yaw_scale])
-                        S = np.diag(scale)
-                        fisher_scaled = S @ fisher_sum @ S  # symmetric scaling
-                        action_scores[action] = float(np.linalg.det(fisher_scaled))
-                       
-                except (IndexError, Exception) as e:
-                    self.get_logger().warn(f"Scoring failed for {action}: {e}")
-                    action_scores[action] = -1e9
-
+        if not action_scores:
+            self.get_logger().warn("No scoreable actions. Defaulting to WAIT.")
+            return "WAIT"
         self.get_logger().info(f"Full Scores of Actions are: /n {action_scores}")
         
         if not safe_actions:
