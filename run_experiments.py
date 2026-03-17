@@ -186,7 +186,7 @@ def run_benchmarking():
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["random_walk", "active_inf_5_h3"]#, "active_inf_5", "active_inf_500"]#, "active_inf_5_h3", "random_walk", "entropy_min"]  
+    algos = ["random_walk", "active_inf_5_h3"]#, "active_inf_5", "active_inf_500"]#, "active_inf_5_h3", "random_walk", "entropy_min", "d_opt_particle"]  
     
     for algo in algos:
         

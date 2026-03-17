@@ -3,7 +3,7 @@ import time
 from nav2_msgs.msg import Particle, ParticleCloud
 import scipy
 from .utils import ParticleClusturer, ACTION_EFFECTS_long, ACTION_EFFECTS_short, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence, calculate_spatial_entropy, is_pose_in_collision, calculate_bimodality_position
-from .models import predict_motion, raycast_scan_numba
+from .models import predict_motion, predict_motion_batch, raycast_scan_numba
 from std_msgs.msg import Float32MultiArray, String
 from geometry_msgs.msg import Pose, Quaternion, Point
 import math
@@ -22,7 +22,13 @@ class ActiveInferenceController:
         self.particle_data_pub = None
         self.status_pub = None
         self.clusturer = ParticleClusturer()
+        
         self.time_delta = seconds_per_step # parameter coming from launch init, usually 1 or 5
+        self.time_delta_sim = seconds_per_step - 0.1 # time for action and inference, 0.1 seconds for calculations in between
+        max_gap = 1.0 # in seconds, how often collision is checked
+        num_steps = math.ceil(self.time_delta_sim / max_gap)
+        self.collision_checkpoints = np.linspace(self.time_delta_sim/num_steps, self.time_delta_sim, num_steps).astype(np.float64)        
+
         self.map_2d = None
         self.dist_map = None
         self.map_metadata = None
@@ -241,8 +247,8 @@ class ActiveInferenceController:
             return self._run_random_walk()
         elif self.algo_mode == "entropy_min":
             return self._run_active_inference(n_raycast_particles=5, only_epistemic=True)
-        elif self.algo_mode == "d_opt_geometry":
-            return self._run_d_opt_geometry()
+        #elif self.algo_mode == "d_opt_geometry":
+        #    return self._run_d_opt_geometry()
         elif self.algo_mode == "d_opt_particle":
             return self._run_d_opt_particle()
         else:
@@ -323,16 +329,17 @@ class ActiveInferenceController:
         # ── EFE evaluation — single step or horizon tree ─────────────
         def evaluate_efe_single(particles_ep, weights_ep, action):
             """Compute EFE for one action at one step."""
-            pred_ep = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta - 0.1)
-                                    for p in particles_ep])
+            pred_ep = predict_motion_batch(particles_ep, action, self.actions_dict, dt=self.time_delta_sim)
             raw_epistemic = self.calculate_efe_epistemic(pred_ep, weights_ep)
 
             if only_epistemic:
                 raw_pragmatic = 0.0
             else:
-                pred_pr       = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta - 0.1)
-                                        for p in initial_poses_pragmatic])
-                raw_pragmatic = self.calculate_efe_pragmatic(pred_pr, initial_weights_pragmatic)
+                raw_pragmatic = 0.0
+                for checkpoint in self.collision_checkpoints:
+                    pred_pr = predict_motion_batch(initial_poses_pragmatic, action, self.actions_dict, dt=checkpoint)
+                    checkpoint_risk = self.calculate_efe_pragmatic(pred_pr, initial_weights_pragmatic)
+                    raw_pragmatic = max(raw_pragmatic, checkpoint_risk)
 
             return (self.alpha_epistemic * raw_epistemic) + (self.beta_pragmatic * raw_pragmatic), \
                 self.alpha_epistemic * raw_epistemic, \
@@ -345,8 +352,7 @@ class ActiveInferenceController:
             for action in actions:
 
                 # ── Epistemic (5 GMM clusters) ────────────────────────
-                pred_ep       = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta - 0.1)
-                                        for p in particles_ep])
+                pred_ep = predict_motion_batch(particles_ep, action, self.actions_dict, dt=self.time_delta_sim)
                 raw_epistemic = self.calculate_efe_epistemic(pred_ep, weights_ep)
 
                 # ── Pragmatic (500 particles, propagated correctly) ───
@@ -354,9 +360,12 @@ class ActiveInferenceController:
                     raw_pragmatic = 0.0
                     pred_pr = None
                 else:
-                    pred_pr       = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta-0.1)
-                                            for p in particles_pr])
-                    raw_pragmatic = self.calculate_efe_pragmatic(pred_pr, weights_pr)
+                    raw_pragmatic = 0.0
+                    # for each value in self.collision_checkpoints, i need to predict the new poses, and give this new array to caluclate pragmatic value divided by len(self.collision_checkpoints)
+                    for checkpoint in self.collision_checkpoints:
+                        pred_pr = predict_motion_batch(particles_pr, action, self.actions_dict, dt=checkpoint)
+                        checkpoint_risk = self.calculate_efe_pragmatic(pred_pr, weights_pr)
+                        raw_pragmatic = max(raw_pragmatic, checkpoint_risk)
 
                 efe_now = (self.alpha_epistemic * raw_epistemic) + (self.beta_pragmatic * raw_pragmatic)
 
@@ -398,6 +407,7 @@ class ActiveInferenceController:
                 _, ep, pr          = evaluate_efe_single(particles_epistemic, weights_epistemic, action)
                 details[action]    = {'epistemic': ep, 'pragmatic': pr}
                 # self.get_logger().info(f"Final EFE For Action {action}: ep:{ep} and pr:{pr}")
+        self.get_logger().info(f"Details for all actions: {details}")
         best_action = min(efe_scores, key=efe_scores.get)
         best_detail = details[best_action]
 
@@ -478,7 +488,7 @@ class ActiveInferenceController:
         
         return total_risk * self.risk_penalty_factor
 
-    def _run_random_walk(self): #was tested, works
+    def _run_random_walk(self): 
         """Random action selection."""
         start_time = time.time()
         
@@ -511,25 +521,32 @@ class ActiveInferenceController:
                 pose_4d = np.array([x, y, np.cos(yaw), np.sin(yaw)])
                 
                 # Predict resulting pose from this action
-                predicted_pose = predict_motion(pose_4d, action, self.actions_dict, self.time_delta - 0.1)
-                
-                # Convert back to 3D for collision check
-                pred_xyz = [
-                    predicted_pose[0],
-                    predicted_pose[1],
-                    np.arctan2(predicted_pose[3], predicted_pose[2])
-                ]
-                
-                # Check if predicted pose causes collision
-                if not is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
+                action_is_safe = True
+                for checkpoint in self.collision_checkpoints:
+                    predicted_pose = predict_motion(pose_4d, action, self.actions_dict, dt=checkpoint)
+                    pred_xyz = [
+                        predicted_pose[0],
+                        predicted_pose[1],
+                        np.arctan2(predicted_pose[3], predicted_pose[2])
+                    ]
+                    if is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
+                        action_is_safe = False
+                        break                          
+                if action_is_safe:
                     safe_actions.append(action)
-            
             # self.get_logger().info(f"Collision filter: {len(safe_actions)}/{len(available_actions)} safe")
         else:
             # Position not available yet, skip collision checking
             self.get_logger().warn("Actual position not available, using all actions")
             safe_actions = available_actions
-       
+        
+        if not safe_actions:
+            self.get_logger().warn(
+                "All actions unsafe including WAIT — robot may already be in collision. "
+                "Defaulting to WAIT."
+            )
+            safe_actions = ['WAIT']
+
         best_action = np.random.choice(safe_actions)
         # Random walk has no "EFE components", so we set them to neutral for the CSV/Logs
         efe_scores = {action: 0.0 for action in available_actions}
@@ -555,11 +572,14 @@ class ActiveInferenceController:
         
         return best_action
     
-    def _run_d_opt_geometry(self): # error all actions currently have same values
+    '''Recommendation: Do ONLY particle run_d, not geometry run_d
+
+    def _run_d_opt_geometry(self): 
         """D-Optimality: Maximize the Determinant of the FIM (Volume of Information) regarding the geometry of the map."""
         return self._run_d_opt(mode='geometry')
+    '''
 
-    def _run_d_opt_particle(self):
+    def _run_d_opt_particle(self): #TODO: error all actions currently have same values, new collision avoidance for time_delta > 1 not implenmeted eitehr
         """D-Optimality: Maximize the Determinant of the FIM (Volume of Information) regarding the particles."""
         return self._run_d_opt(mode='particle')
     
@@ -583,7 +603,7 @@ class ActiveInferenceController:
         return self.fisher_map
     
     def _run_d_opt(self, mode='particle'):
-        #TODO: currently runs on the real pose, but should run on the particles, on all particles or gmm (same as run active inferece), but not on only 1
+        #TODO: currently runs on the real pose, but should run on the particles, on all particles or gmm (same as run active inferece), but not on only 1, and collision according to new delta_time_sim 
         start_time = time.time()
         
         # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
@@ -611,7 +631,8 @@ class ActiveInferenceController:
         for action in available_actions:
             # Predict resulting pose for collision check
             pose_4d = np.array([current_pose_3d[0], current_pose_3d[1], np.cos(current_pose_3d[2]), np.sin(current_pose_3d[2])])
-            pred_pose_4d = predict_motion(pose_4d, action, self.actions_dict, self.time_delta - 0.1)
+
+            pred_pose_4d = predict_motion(pose_4d, action, self.actions_dict, dt=self.time_delta_sim)
             pred_xyz = [pred_pose_4d[0], pred_pose_4d[1], np.arctan2(pred_pose_4d[3], pred_pose_4d[2])]
 
             if not is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
@@ -637,7 +658,7 @@ class ActiveInferenceController:
                             w = initial_weights[i]
 
                             # Particle is [x, y, cos(yaw), sin(yaw)] — adjust if different
-                            pred_p = predict_motion(particle, action, self.actions_dict, self.time_delta - 0.1)
+                            pred_p = predict_motion(particle, action, self.actions_dict, dt=self.time_delta_sim)
                             pred_p_xyz = [pred_p[0], pred_p[1], np.arctan2(pred_p[3], pred_p[2])]
                             # TODO: Incorporated the raycast scan numba, check if logic works for d_opt
                             # Keep in mind that here i do it per particle, but raycast scan actually takes a set of particles

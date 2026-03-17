@@ -35,6 +35,32 @@ def predict_motion(pose_4d, action_type, action_dict, dt):
 
     return np.array([new_x, new_y, np.cos(new_theta), np.sin(new_theta)])
 
+def predict_motion_batch(poses_4d, action_type, action_dict, dt):
+    """
+    Vectorized batch version of predict_motion.
+    Predicts the future state of a cluster center over a fixed time step dt.
+    poses_4d: (N, 4) array — all particles at once    
+    dt: time delta in seconds the action is applied for (discrete step)
+    Returns: new 4D pose numpy array [x, y, cos(theta), sin(theta)]
+    """
+    x      = poses_4d[:, 0]
+    y      = poses_4d[:, 1]
+    ctheta = poses_4d[:, 2]
+    stheta = poses_4d[:, 3]
+    theta  = np.arctan2(stheta, ctheta)  # one vectorized arctan2 instead of N
+
+    effect = action_dict.get(action_type, {'linear': 0.0, 'angular': 0.0})
+    v, w   = effect['linear'], effect['angular']
+
+    delta_theta = w * dt
+    new_theta   = theta + delta_theta
+    move_angle  = theta + delta_theta / 2.0
+
+    new_x = x + (v * dt) * np.cos(move_angle)
+    new_y = y + (v * dt) * np.sin(move_angle)
+
+    return np.column_stack([new_x, new_y, np.cos(new_theta), np.sin(new_theta)])
+
 '''
 # --- 2. Simplified Raycaster (Needs the map!) ---
 # Based on distance map and its metadata (resolution, origin)
