@@ -115,11 +115,7 @@ def raycast_scan(poses_4d, dist_map, map_metadata, fov_deg=180, num_beams=16):
 @njit
 def raycast_scan_numba(
     poses_4d, dist_map, res, ox, oy, 
-    fov_deg=180.0,
-    num_beams=16,
-    max_range=8.0,
-    min_range=0.15,
-    stddev=0.025):
+    fov_deg,num_beams,max_range,min_range,stddev):
     """
     Optimized Raycaster for Active Inference.
     # needs to fit the lidar_gpu settings! /diff_drive_robot/urdf/lidar_gpu_180_sensor.xacro
@@ -177,3 +173,43 @@ def raycast_scan_numba(
                 results[i, j] = max_range
                 
     return results
+
+@njit(cache=True)
+def compute_fisher_from_scan_numba(pose_xyz, scan_ranges, laser_angles, laser_max_range):
+    """
+    Numba-accelerated Fisher Information Matrix calculation.
+    """
+    yaw = pose_xyz[2]
+    
+    # Pre-allocate a flat 3x3 matrix filled with zeros
+    F = np.zeros((3, 3), dtype=np.float64)
+
+    for k in range(len(scan_ranges)):
+        r = scan_ranges[k]
+        
+        # Skip invalid/max range beams (no information gained here)
+        if r >= laser_max_range or r <= 0.0:
+            continue
+
+        beam_angle = yaw + laser_angles[k]
+
+        # Gradients
+        dr_dx = -np.cos(beam_angle)
+        dr_dy = -np.sin(beam_angle)
+        dr_dyaw = r * np.sin(laser_angles[k])
+
+        # MANUALLY UNROLL THE OUTER PRODUCT
+        # This prevents Numba from having to allocate temporary arrays in memory
+        F[0, 0] += dr_dx * dr_dx
+        F[0, 1] += dr_dx * dr_dy
+        F[0, 2] += dr_dx * dr_dyaw
+        
+        F[1, 0] += dr_dy * dr_dx
+        F[1, 1] += dr_dy * dr_dy
+        F[1, 2] += dr_dy * dr_dyaw
+        
+        F[2, 0] += dr_dyaw * dr_dx
+        F[2, 1] += dr_dyaw * dr_dy
+        F[2, 2] += dr_dyaw * dr_dyaw
+
+    return F
