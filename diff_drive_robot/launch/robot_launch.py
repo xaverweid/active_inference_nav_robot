@@ -9,7 +9,7 @@ from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, Grou
 
 def generate_launch_description():
 
-    x_pose = LaunchConfiguration('x_pose', default='0.0')
+    x_pose = LaunchConfiguration('x_pose', default='3.0')
     y_pose = LaunchConfiguration('y_pose', default='0.0')
     yaw_pose = LaunchConfiguration('yaw_pose', default='-1.0')
 

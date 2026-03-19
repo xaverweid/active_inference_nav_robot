@@ -3,7 +3,7 @@ import time
 from nav2_msgs.msg import Particle, ParticleCloud
 import scipy
 from .utils import ParticleClusturer, ACTION_EFFECTS_long, ACTION_EFFECTS_short, get_map_metadata, get_proximity_risk, calculate_shannon_entropy, calculate_convergence, calculate_spatial_entropy, is_pose_in_collision, calculate_bimodality_position
-from .models import predict_motion, raycast_scan_numba
+from .models import predict_motion, predict_motion_batch, raycast_scan_numba, compute_fisher_from_scan_numba
 from std_msgs.msg import Float32MultiArray, String
 from geometry_msgs.msg import Pose, Quaternion, Point
 import math
@@ -22,7 +22,13 @@ class ActiveInferenceController:
         self.particle_data_pub = None
         self.status_pub = None
         self.clusturer = ParticleClusturer()
+        
         self.time_delta = seconds_per_step # parameter coming from launch init, usually 1 or 5
+        self.time_delta_sim = seconds_per_step - 0.1 # time for action and inference, 0.1 seconds for calculations in between
+        max_gap = 1.0 # in seconds, how often collision is checked
+        num_steps = math.ceil(self.time_delta_sim / max_gap)
+        self.collision_checkpoints = np.linspace(self.time_delta_sim/num_steps, self.time_delta_sim, num_steps).astype(np.float64)        
+
         self.map_2d = None
         self.dist_map = None
         self.map_metadata = None
@@ -58,7 +64,17 @@ class ActiveInferenceController:
         self.alpha_epistemic = 1000.0 
         self.beta_pragmatic = 200.0 
         self.risk_penalty_factor = 5.0
-        
+
+        # --- LIDAR PARAMETERS --- should align with lidar from robot (besides num_beams for computation feasibility)
+        self.num_beams  = 16            # number of raycast beams, is different from robot lidar! computationally doable with 16
+        min_angle        = -1.57   # radians (-90°)
+        max_angle        =  1.57   # radians (+90°)
+        self.fov_deg = 180.0
+        self.laser_min_range = 0.15
+        self.laser_max_range = 8.0
+        self.laser_angles = np.linspace(min_angle, max_angle, self.num_beams)
+        self.laser_std_dev = 0.025
+
         # --- GROUND TRUTH FOR LOGGING (set by AICNode) ---
         # These are strictly for logging/analysis, NOT for decision-making
         self.ground_truth_pose = None   # [x, y, yaw] from ground truth (for reference only)
@@ -241,8 +257,6 @@ class ActiveInferenceController:
             return self._run_random_walk()
         elif self.algo_mode == "entropy_min":
             return self._run_active_inference(n_raycast_particles=5, only_epistemic=True)
-        elif self.algo_mode == "d_opt_geometry":
-            return self._run_d_opt_geometry()
         elif self.algo_mode == "d_opt_particle":
             return self._run_d_opt_particle()
         else:
@@ -323,16 +337,17 @@ class ActiveInferenceController:
         # ── EFE evaluation — single step or horizon tree ─────────────
         def evaluate_efe_single(particles_ep, weights_ep, action):
             """Compute EFE for one action at one step."""
-            pred_ep = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta - 0.1)
-                                    for p in particles_ep])
+            pred_ep = predict_motion_batch(particles_ep, action, self.actions_dict, dt=self.time_delta_sim)
             raw_epistemic = self.calculate_efe_epistemic(pred_ep, weights_ep)
 
             if only_epistemic:
                 raw_pragmatic = 0.0
             else:
-                pred_pr       = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta - 0.1)
-                                        for p in initial_poses_pragmatic])
-                raw_pragmatic = self.calculate_efe_pragmatic(pred_pr, initial_weights_pragmatic)
+                raw_pragmatic = 0.0
+                for checkpoint in self.collision_checkpoints:
+                    pred_pr = predict_motion_batch(initial_poses_pragmatic, action, self.actions_dict, dt=checkpoint)
+                    checkpoint_risk = self.calculate_efe_pragmatic(pred_pr, initial_weights_pragmatic)
+                    raw_pragmatic = max(raw_pragmatic, checkpoint_risk)
 
             return (self.alpha_epistemic * raw_epistemic) + (self.beta_pragmatic * raw_pragmatic), \
                 self.alpha_epistemic * raw_epistemic, \
@@ -345,8 +360,7 @@ class ActiveInferenceController:
             for action in actions:
 
                 # ── Epistemic (5 GMM clusters) ────────────────────────
-                pred_ep       = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta - 0.1)
-                                        for p in particles_ep])
+                pred_ep = predict_motion_batch(particles_ep, action, self.actions_dict, dt=self.time_delta_sim)
                 raw_epistemic = self.calculate_efe_epistemic(pred_ep, weights_ep)
 
                 # ── Pragmatic (500 particles, propagated correctly) ───
@@ -354,9 +368,12 @@ class ActiveInferenceController:
                     raw_pragmatic = 0.0
                     pred_pr = None
                 else:
-                    pred_pr       = np.array([predict_motion(p, action, self.actions_dict, dt=self.time_delta-0.1)
-                                            for p in particles_pr])
-                    raw_pragmatic = self.calculate_efe_pragmatic(pred_pr, weights_pr)
+                    raw_pragmatic = 0.0
+                    # for each value in self.collision_checkpoints, i need to predict the new poses, and give this new array to caluclate pragmatic value divided by len(self.collision_checkpoints)
+                    for checkpoint in self.collision_checkpoints:
+                        pred_pr = predict_motion_batch(particles_pr, action, self.actions_dict, dt=checkpoint)
+                        checkpoint_risk = self.calculate_efe_pragmatic(pred_pr, weights_pr)
+                        raw_pragmatic = max(raw_pragmatic, checkpoint_risk)
 
                 efe_now = (self.alpha_epistemic * raw_epistemic) + (self.beta_pragmatic * raw_pragmatic)
 
@@ -398,6 +415,7 @@ class ActiveInferenceController:
                 _, ep, pr          = evaluate_efe_single(particles_epistemic, weights_epistemic, action)
                 details[action]    = {'epistemic': ep, 'pragmatic': pr}
                 # self.get_logger().info(f"Final EFE For Action {action}: ep:{ep} and pr:{pr}")
+        self.get_logger().info(f"Details for all actions: {details}")
         best_action = min(efe_scores, key=efe_scores.get)
         best_detail = details[best_action]
 
@@ -429,11 +447,8 @@ class ActiveInferenceController:
         oy = float(self.map_metadata['origin_y'])
         pred_scans = raycast_scan_numba(
             poses_4d=np.asarray(predicted_poses, dtype=np.float64),
-            dist_map=self.dist_map,
-            res=res,
-            ox=ox,
-            oy=oy,
-        )
+            dist_map=self.dist_map,res=res,ox=ox,oy=oy,
+            fov_deg=self.fov_deg, num_beams=self.num_beams, max_range=self.laser_max_range, min_range=self.laser_min_range, stddev=self.laser_std_dev)
 
         # Sanity checks / normalization
         rep_weights = np.asarray(rep_weights, dtype=np.float64)
@@ -478,7 +493,7 @@ class ActiveInferenceController:
         
         return total_risk * self.risk_penalty_factor
 
-    def _run_random_walk(self): #was tested, works
+    def _run_random_walk(self): 
         """Random action selection."""
         start_time = time.time()
         
@@ -495,41 +510,47 @@ class ActiveInferenceController:
         
         # --- PHASE 2: ALGORITHM SPECIFIC LOGIC ---
         available_actions = list(self.actions_dict.keys())
-
+        
+        # --- PHASE 2.1: COLLISION AVOIDANCE
         # Check if we have the actual position available
         if self.actual_real_position is not None and self.actual_real_yaw is not None:
-            current_pose = [
-                self.actual_real_position[0],
-                self.actual_real_position[1],
-                self.actual_real_yaw
-            ]
+            current_pose_4d = np.array([
+                self.actual_real_position[0], self.actual_real_position[1],
+                np.cos(self.actual_real_yaw), np.sin(self.actual_real_yaw)
+                ])
+
             # HARD CONSTRAINT: Filter collision-causing actions
             safe_actions = []
             for action in available_actions:
-                # Convert 3D to 4D pose
-                x, y, yaw = current_pose
-                pose_4d = np.array([x, y, np.cos(yaw), np.sin(yaw)])
                 
                 # Predict resulting pose from this action
-                predicted_pose = predict_motion(pose_4d, action, self.actions_dict, self.time_delta - 0.1)
-                
-                # Convert back to 3D for collision check
-                pred_xyz = [
-                    predicted_pose[0],
-                    predicted_pose[1],
-                    np.arctan2(predicted_pose[3], predicted_pose[2])
-                ]
-                
-                # Check if predicted pose causes collision
-                if not is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
+                action_is_safe = True
+                for checkpoint in self.collision_checkpoints:
+                    predicted_pose = predict_motion(current_pose_4d, action, self.actions_dict, dt=checkpoint)
+                    pred_xyz = [
+                        predicted_pose[0],
+                        predicted_pose[1],
+                        np.arctan2(predicted_pose[3], predicted_pose[2])
+                    ]
+                    if is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
+                        action_is_safe = False
+                        break                          
+                if action_is_safe:
                     safe_actions.append(action)
-            
             # self.get_logger().info(f"Collision filter: {len(safe_actions)}/{len(available_actions)} safe")
         else:
             # Position not available yet, skip collision checking
             self.get_logger().warn("Actual position not available, using all actions")
             safe_actions = available_actions
-       
+        
+        if not safe_actions:
+            self.get_logger().warn(
+                "All actions unsafe including WAIT — robot may already be in collision. "
+                "Defaulting to WAIT."
+            )
+            safe_actions = ['WAIT']
+        
+        # --- PHASE 2.2: ACTION EVALUATION
         best_action = np.random.choice(safe_actions)
         # Random walk has no "EFE components", so we set them to neutral for the CSV/Logs
         efe_scores = {action: 0.0 for action in available_actions}
@@ -555,35 +576,7 @@ class ActiveInferenceController:
         
         return best_action
     
-    def _run_d_opt_geometry(self): # error all actions currently have same values
-        """D-Optimality: Maximize the Determinant of the FIM (Volume of Information) regarding the geometry of the map."""
-        return self._run_d_opt(mode='geometry')
-
     def _run_d_opt_particle(self):
-        """D-Optimality: Maximize the Determinant of the FIM (Volume of Information) regarding the particles."""
-        return self._run_d_opt(mode='particle')
-    
-    def _get_fisher_map(self):
-        """Calculates the Fisher Information Map only once when needed."""
-        if self.fisher_map is None:
-            start = time.time()
-            self.get_logger().info("Calculating Fisher Information Map (D-Optimality)...")
-            
-            # Calculate gradients along both axes
-            # np.gradient returns a list: [grad_y, grad_x]
-            dy, dx = np.gradient(self.dist_map)
-            
-            # We use the magnitude of the gradient as a proxy for 'D-Optimality'
-            # High magnitude = near walls/corners (high information)
-            self.fisher_map = np.hypot(dx, dy)
-            
-            duration = time.time() - start
-            self.get_logger().info(f"Fisher Map initialized in {duration:.4f}s")
-            
-        return self.fisher_map
-    
-    def _run_d_opt(self, mode='particle'):
-        #TODO: currently runs on the real pose, but should run on the particles, on all particles or gmm (same as run active inferece), but not on only 1
         start_time = time.time()
         
         # --- PHASE 1: UPDATE BELIEF & CHECK STATUS --- 
@@ -596,100 +589,110 @@ class ActiveInferenceController:
         termination_action = self.check_termination_conditions()
         if termination_action:
             return termination_action
-        
-        # --- PHASE 2: ALGORITHM SPECIFIC LOGIC ---
-        initial_particles = np.copy(self.current_particles)
-        initial_weights = np.copy(self.current_weights)
-        available_actions = list(self.actions_dict.keys())
-        current_pose_3d = [self.actual_real_position[0], self.actual_real_position[1], self.actual_real_yaw]
-        
-        # Filter safe actions (Same logic as your Random Walk)
-        f_maps = self._get_fisher_maps
-        safe_actions = []
-        action_scores = {}
-        
-        for action in available_actions:
-            # Predict resulting pose for collision check
-            pose_4d = np.array([current_pose_3d[0], current_pose_3d[1], np.cos(current_pose_3d[2]), np.sin(current_pose_3d[2])])
-            pred_pose_4d = predict_motion(pose_4d, action, self.actions_dict, self.time_delta - 0.1)
-            pred_xyz = [pred_pose_4d[0], pred_pose_4d[1], np.arctan2(pred_pose_4d[3], pred_pose_4d[2])]
-
-            if not is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
-                safe_actions.append(action)
-                
-                px = int((pred_xyz[0] - self.map_metadata['origin_x']) / self.map_metadata['resolution'])
-                py = int((pred_xyz[1] - self.map_metadata['origin_y']) / self.map_metadata['resolution'])
-                # --- SCORING LOGIC ---
-             
-                try:
-                    if mode == 'geometry':
-                    # geometry based
-                        particle_set = initial_particles
-                        #TODO: make sure for the particle beliefs, not only for 1
-                        action_scores[action] = sum(self._get_fisher_info_det(particle for particle in particle_set))
-                
-                    else:
-                        # particle based
-                        # Propagate all particles through this action
-                        fisher_sum = np.zeros((3, 3))  # includes yaw
-
-                        for i, particle in enumerate(initial_particles):
-                            w = initial_weights[i]
-
-                            # Particle is [x, y, cos(yaw), sin(yaw)] — adjust if different
-                            pred_p = predict_motion(particle, action, self.actions_dict, self.time_delta - 0.1)
-                            pred_p_xyz = [pred_p[0], pred_p[1], np.arctan2(pred_p[3], pred_p[2])]
-                            # TODO: Incorporated the raycast scan numba, check if logic works for d_opt
-                            # Keep in mind that here i do it per particle, but raycast scan actually takes a set of particles
-                            res = float(self.map_metadata['resolution'])
-                            ox = float(self.map_metadata['origin_x'])
-                            oy = float(self.map_metadata['origin_y'])
-                            pred_scans = raycast_scan_numba(
-                                poses_4d=np.asarray(pred_p_xyz, dtype=np.float64),
-                                dist_map=self.dist_map,
-                                res=res,
-                                ox=ox,
-                                oy=oy,
-                            )                            
-
-                            # Compute Fisher info from this scan (your existing per-pose method)
-                            F = self._compute_fisher_from_scan(pred_p_xyz, pred_scans)  # shape (2,2) or (3,3)
-
-                            fisher_sum += w * F
-
-                        # Normalizing Fisher Matrix since yaw and meters scales differ
-                        # Use half map's approximate diameter as the scale
-                        map_width_m = self.map_metadata['width'] * self.map_metadata['resolution']
-                        map_height_m = self.map_metadata['height'] * self.map_metadata['resolution']
-                        yaw_scale = 0.5 * max(map_width_m, map_height_m)
-                        scale = np.array([1.0, 1.0, yaw_scale])
-                        S = np.diag(scale)
-                        fisher_scaled = S @ fisher_sum @ S  # symmetric scaling
-                        action_scores[action] = float(np.linalg.det(fisher_scaled))
-                       
-                except (IndexError, Exception) as e:
-                    self.get_logger().warn(f"Scoring failed for {action}: {e}")
-                    action_scores[action] = -1e9
-
-        self.get_logger().info(f"Full Scores of Actions are: /n {action_scores}")
-        
-        if not safe_actions:
-            self.get_logger().warn("No safe actions found! Waiting.")
-            return "WAIT"
-
-        # Select the action with the highest score
-        best_action = max(action_scores, key=action_scores.get)
     
+        # --- PHASE 2: ALGORITHM SPECIFIC LOGIC ---
+        available_actions = list(self.actions_dict.keys())
         
-        # Prepare metrics for logging (matching AIC structure)
-        efe_scores = {a: action_scores.get(a, -1e9) for a in available_actions}
-        best_detail = {'epistemic': action_scores[best_action], 'pragmatic': 0.0}
+        # --- PHASE 2.1: COLLISION AVOIDANCE        
+        if self.actual_real_position is not None and self.actual_real_yaw is not None:
+            current_pose_4d = np.array([
+                self.actual_real_position[0], self.actual_real_position[1],
+                np.cos(self.actual_real_yaw), np.sin(self.actual_real_yaw)
+                ])
 
+            # HARD CONSTRAINT: Filter collision-causing actions
+            safe_actions = []
+            for action in available_actions:
+                
+                # Predict resulting pose from this action
+                action_is_safe = True
+                for checkpoint in self.collision_checkpoints:
+                    predicted_pose = predict_motion(current_pose_4d, action, self.actions_dict, dt=checkpoint)
+                    pred_xyz = [
+                        predicted_pose[0],
+                        predicted_pose[1],
+                        np.arctan2(predicted_pose[3], predicted_pose[2])
+                    ]
+                    if is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
+                        action_is_safe = False
+                        break                          
+                if not action_is_safe:
+                    continue
+                safe_actions.append(action)
+
+        else:
+            # Position not available yet, skip collision checking
+            self.get_logger().warn("Actual position not available, using all actions")
+            safe_actions = available_actions
+        
+        # --- PHASE 2.2: ACTION EVALUATION: SCORING according to d_opt
+        # Scoring uses GMM only — same as epistemic in active inference
+        scoring_particles = np.copy(gmm_poses)
+        scoring_weights   = np.copy(gmm_weights)
+        res          = float(self.map_metadata['resolution'])
+        ox           = float(self.map_metadata['origin_x'])
+        oy           = float(self.map_metadata['origin_y'])
+        map_width_m  = self.map_metadata['width']  * self.map_metadata['resolution']
+        map_height_m = self.map_metadata['height'] * self.map_metadata['resolution']
+        yaw_scale    = 0.5 * max(map_width_m, map_height_m)
+        S            = np.diag([1.0, 1.0, yaw_scale])
+        action_scores = {}
+
+        if not safe_actions:
+            self.get_logger().warn("No safe actions found! Return Wait.")
+            return "WAIT"
+        
+        for action in safe_actions:
+            try:
+                # 1. Predict all particles
+                pred_particles = predict_motion_batch(scoring_particles, action, self.actions_dict, dt=self.time_delta_sim)
+       
+                # 2. Raycast all particles
+                pred_scans = raycast_scan_numba(
+                        poses_4d=pred_particles, dist_map=self.dist_map,res=res, ox=ox, oy=oy,
+                        fov_deg=self.fov_deg, num_beams=self.num_beams, max_range=self.laser_max_range, min_range=self.laser_min_range, stddev=self.laser_std_dev
+                        )
+                
+                # 3. Calculate Expected Fisher Information
+                fisher_sum = np.zeros((3, 3))
+                for i in range(len(pred_particles)):
+                    w          = scoring_weights[i]
+                    pred_p     = pred_particles[i]
+
+                    pred_p_xyz = [pred_p[0], pred_p[1], np.arctan2(pred_p[3], pred_p[2])]                    
+                    F          = compute_fisher_from_scan_numba(
+                        pred_p_xyz, 
+                        pred_scans[i], 
+                        self.laser_angles, 
+                        self.laser_max_range
+                    )
+                    fisher_sum += w * F
+                
+                # 4. Scale and Score
+                fisher_scaled = S @ fisher_sum @ S
+                score = float(np.linalg.det(fisher_scaled))
+                action_scores[action] = max(score, 0.0)  # det should never be negative for valid FIM
+                            
+            except (IndexError, Exception) as e:
+                self.get_logger().warn(f"Scoring run_d_opt failed for {action}: {e}")
+                action_scores[action] = -1e9
+        
+        if not action_scores:
+            self.get_logger().warn("No scoreable actions. Defaulting to WAIT.")
+            return "WAIT"
+        
+        # Select the action with the highest score from safe actions (action_scores only safe_actions)
+        best_action = max(action_scores, key=action_scores.get)
+
+        # Prepare metrics for logging (matching AIC structure)
+        efe_scores = {a: action_scores.get(a, 0.0) for a in available_actions}
+        best_detail = {'epistemic': action_scores[best_action], 'pragmatic': 0.0}
+        
         # --- PHASE 3: FINALIZE & PUBLISH ---
         best_action = self.handle_wait_streak(best_action, efe_scores, safe_actions=safe_actions)
-        self.get_logger().info(f"D-Optimality-{mode}: {best_action}")
-        
-         # Store for logging
+        self.get_logger().info(f"D-Optimality: {best_action}")
+        self.get_logger().info(f"Full scores: {efe_scores}")
+
         self.runtime_counter += 1
         self.chosen_action = best_action
         self.last_raw_epistemic = best_detail['epistemic']
@@ -699,43 +702,9 @@ class ActiveInferenceController:
         
         total_time = time.time() - start_time
         if total_time > self.time_delta:
-            self.get_logger().warn(f"Slowdown in {mode}-D-Opt: {total_time:.2f}s")
+            self.get_logger().warn(f"Slowdown in D-Opt: {total_time:.2f}s")
             
         return best_action
-
-    def _get_fisher_info_det(self, x, y):
-        # Ensure the map is calculated
-        f_map = self._get_fisher_map()
-        
-        # Convert world (meters) to map indices (pixels)
-        px = int((x - self.map_metadata['origin_x']) / self.map_metadata['resolution'])
-        py = int((y - self.map_metadata['origin_y']) / self.map_metadata['resolution'])
-
-        try:
-            # Direct lookup from the pre-calculated gradient map
-            return float(f_map[py, px])
-        except IndexError:
-            return 0.0
-    
-    def _compute_fisher_from_scan(self, pose_xyz, scan_ranges):
-        x, y, yaw = pose_xyz
-        F = np.zeros((3, 3))  # [x, y, yaw]
-
-        for k, r in enumerate(scan_ranges):
-            if r >= self.laser_max_range or r <= 0.0:
-                continue
-
-            beam_angle = yaw + self.laser_angles[k]
-
-            # Gradient of range w.r.t. [x, y, yaw]
-            dr_dx = -np.cos(beam_angle)
-            dr_dy = -np.sin(beam_angle)
-            dr_dyaw = r * np.sin(self.laser_angles[k])  # tangential component
-
-            grad = np.array([dr_dx, dr_dy, dr_dyaw])
-            F += np.outer(grad, grad)
-
-        return F
     
     def handle_wait_streak(self, best_action, efe_scores, safe_actions):
         """
