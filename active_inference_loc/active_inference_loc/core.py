@@ -32,7 +32,6 @@ class ActiveInferenceController:
         self.map_2d = None
         self.dist_map = None
         self.map_metadata = None
-        self.fisher_map = None # used for D-optimality algo
         self.current_particles = None
         self.current_weights = None
 
