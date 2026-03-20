@@ -182,12 +182,12 @@ def run_benchmarking():
     poses_file_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
-        'starting_poses_1000.csv' # 1000 or 100
+        'starting_poses_1000_h_map.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv]
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["d_opt_particle"]#, "active_inf_5", "active_inf_500", "active_inf_5_h3", "random_walk", "entropy_min", "d_opt_particle"]  
-    seconds_per_step = '1' #, '1', '5'
+    algos = ["active_inf_5_h3","random_walk", "active_inf_5"]#, "active_inf_5", "active_inf_500", "active_inf_5_h3", "random_walk", "entropy_min", "d_opt_particle"]  
+    seconds_per_step = '5' #, '1', '5'
 
     for algo in algos:
         
