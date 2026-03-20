@@ -4,6 +4,7 @@ from PIL import Image
 import os
 from ament_index_python.packages import get_package_share_directory
 
+
 def load_map(map_yaml_path):
     with open(map_yaml_path, 'r') as f:
         map_data = yaml.safe_load(f)
@@ -162,16 +163,17 @@ def save_poses_to_csv(poses, csv_path):
 # Main execution
 if __name__ == '__main__':
     # Define paths
+    world_yaml_path='h_map.yaml'
     map_yaml_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'maps',
-        'my_map.yaml'
+        world_yaml_path
     )
     
     csv_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
-        'starting_poses_1000.csv'
+        'starting_poses_1000_h_map.csv'
     )
     
     # Generate poses with 0.28m clearance (15cm robot radius + 8cm safety + 5cm grid cell rounding error)
