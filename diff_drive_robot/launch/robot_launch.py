@@ -28,8 +28,10 @@ def generate_launch_description():
     world = LaunchConfiguration('world')
     rviz = LaunchConfiguration('rviz')
 
-    # Path to default world 
-    world_path = os.path.join(pkg_dir,'worlds', 'world.sdf')
+    # Path to default world  
+    # if you change world file, be sure to also change the .yaml path further down (h_map_world.yaml OR my_map.yaml)
+
+    world_path = os.path.join(pkg_dir,'worlds', 'h_map_world.sdf') #[h_map_world.sdf, world.sdf]
 
     # Launch Arguments
     declare_world = DeclareLaunchArgument(
@@ -105,9 +107,9 @@ def generate_launch_description():
         )]
     )
 
+    # Ensure this path is correct for the SLAM generated map (see mapping_launch.py if you need to create one)
+    map_file = os.path.join(pkg_dir, 'maps', 'h_map.yaml')  #[h_map.yaml, my_map.yaml]
 
-    map_file = os.path.join(pkg_dir, 'maps', 'my_map.yaml')  # Ensure this path is correct for the SLAM generated map (see mapping_launch.py if you need to create one)
-    
     amcl_params = os.path.join(pkg_dir, 'config', 'amcl.yaml')  
 
     # 1. MAP SERVER
