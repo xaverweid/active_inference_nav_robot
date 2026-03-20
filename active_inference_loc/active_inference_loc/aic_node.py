@@ -37,7 +37,7 @@ class AICNode(Node):
         self.get_logger().info(f"--- with seconds per step t := {self.seconds_per_step}")
 
         self.time_delta = self.seconds_per_step
-        self.startup_delay = 14.0 #relative to self.time_delta
+        self.startup_delay = 5.0 #relative to self.time_delta
         self.ticks_to_wait = int(self.startup_delay / self.time_delta)
         self.ticks_passed = 0
 

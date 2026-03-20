@@ -186,14 +186,15 @@ def run_benchmarking():
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["random_walk", "active_inf_5_h3"]#, "active_inf_5", "active_inf_500"]#, "active_inf_5_h3", "random_walk", "entropy_min", "d_opt_particle"]  
-    
+    algos = ["d_opt_particle"]#, "active_inf_5", "active_inf_500", "active_inf_5_h3", "random_walk", "entropy_min", "d_opt_particle"]  
+    seconds_per_step = '1' #, '1', '5'
+
     for algo in algos:
         
-        algo_dir = os.path.join(os.getcwd(), algo)
+        algo_dir = os.path.join(os.getcwd(), algo, seconds_per_step)
         os.makedirs(algo_dir, exist_ok=True)
         
-        summary_filename = os.path.join(algo_dir, f"summary_{algo}_{RUN_TIMESTAMP}.csv")
+        summary_filename = os.path.join(algo_dir, f"summary_{algo}_{seconds_per_step}s_{RUN_TIMESTAMP}.csv")
         summary_f = open(summary_filename, mode='w')
         summary_writer = csv.writer(summary_f)
         summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta',
@@ -207,7 +208,7 @@ def run_benchmarking():
                 print(f"[PERIODIC RESET] Run {i} — extended cooldown...")
                 time.sleep(30)  # let OS fully settle
 
-            trial_id = os.path.join(algo_dir, f"trial_{algo}_p{i+1:04d}_{RUN_TIMESTAMP}")
+            trial_id = os.path.join(algo_dir, f"trial_{algo}_{seconds_per_step}s_p{i+1:04d}_{RUN_TIMESTAMP}")
             print(f"\n{'='*60}")
             print(f">>> Starting {trial_id}")
             print(f"{'='*60}")
@@ -228,11 +229,13 @@ def run_benchmarking():
             time.sleep(12)
             
             # [3/3] Launching AIC controller
-            print(f"[3/3] Launching AIC node in mode: {algo}")
+            print(f"[3/3] Launching AIC node in mode: {algo}_{seconds_per_step}s")
             ctrl_proc = subprocess.Popen([
                 "ros2", "launch", "active_inference_loc", "aic_launch.py", 
                 "enable_viz:=false", # disable Belief Monitor Node
-                f"algo_mode:={algo}", f"spawn_x:={p['x']}", f"spawn_y:={p['y']}", f"spawn_yaw:={p['yaw']}"
+                f"algo_mode:={algo}", 
+                f"spawn_x:={p['x']}", f"spawn_y:={p['y']}", f"spawn_yaw:={p['yaw']}",
+                f"seconds_per_step:={seconds_per_step}"
             ], preexec_fn=os.setsid, env=clean_env) # Pass clean_env here
             
             active_ctrl_proc = ctrl_proc

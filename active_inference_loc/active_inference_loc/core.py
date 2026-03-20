@@ -689,8 +689,8 @@ class ActiveInferenceController:
         
         # --- PHASE 3: FINALIZE & PUBLISH ---
         best_action = self.handle_wait_streak(best_action, efe_scores, safe_actions=safe_actions)
-        self.get_logger().info(f"D-Optimality: {best_action}")
-        self.get_logger().info(f"Full scores: {efe_scores}")
+        # self.get_logger().info(f"D-Optimality: {best_action}")
+        # self.get_logger().info(f"Full scores: {efe_scores}")
 
         self.runtime_counter += 1
         self.chosen_action = best_action
