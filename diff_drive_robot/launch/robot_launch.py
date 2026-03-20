@@ -29,7 +29,7 @@ def generate_launch_description():
     rviz = LaunchConfiguration('rviz')
 
     # Path to default world 
-    world_path = os.path.join(pkg_dir,'worlds', 'h_map_world.sdf')
+    world_path = os.path.join(pkg_dir,'worlds', 'world.sdf')
 
     # Launch Arguments
     declare_world = DeclareLaunchArgument(
