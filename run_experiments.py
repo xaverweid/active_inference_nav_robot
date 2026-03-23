@@ -186,29 +186,30 @@ def run_benchmarking():
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["active_inf_5_h3","random_walk", "active_inf_5"]#, "active_inf_5", "active_inf_500", "active_inf_5_h3", "random_walk", "entropy_min", "d_opt_particle"]  
+    algos = ["active_inf_5_h3","random_walk", "active_inf_5", "d_opt_particle"]#, "active_inf_5", "active_inf_500", "active_inf_5_h3", "random_walk", "entropy_min", "d_opt_particle"]  
     seconds_per_step = '5' #, '1', '5'
+    map_name= 'h_map'
 
     for algo in algos:
         
-        algo_dir = os.path.join(os.getcwd(), algo, seconds_per_step)
+        algo_dir = os.path.join(os.getcwd(), map_name, seconds_per_step, algo)
         os.makedirs(algo_dir, exist_ok=True)
         
-        summary_filename = os.path.join(algo_dir, f"summary_{algo}_{seconds_per_step}s_{RUN_TIMESTAMP}.csv")
+        summary_filename = os.path.join(algo_dir, f"summary_{map_name}_{seconds_per_step}s_{algo}_{RUN_TIMESTAMP}.csv")
         summary_f = open(summary_filename, mode='w')
         summary_writer = csv.writer(summary_f)
         summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta',
                                 'convergence_threshold', 'bimodal_score_threshold',
                                 'planning_sigma', 'spatial_entropy_res'])
 
-        for i, p in enumerate(poses[0:1000], start=0):
+        for i, p in enumerate(poses[0:200], start=0):
 
             # Hard reset every 100 runs: sleep longer to let system breathe
             if i > 0 and i % 100 == 0:
                 print(f"[PERIODIC RESET] Run {i} — extended cooldown...")
                 time.sleep(30)  # let OS fully settle
 
-            trial_id = os.path.join(algo_dir, f"trial_{algo}_{seconds_per_step}s_p{i+1:04d}_{RUN_TIMESTAMP}")
+            trial_id = os.path.join(algo_dir, f"trial_{map_name}_{seconds_per_step}s_{algo}_p{i+1:04d}_{RUN_TIMESTAMP}")
             print(f"\n{'='*60}")
             print(f">>> Starting {trial_id}")
             print(f"{'='*60}")
