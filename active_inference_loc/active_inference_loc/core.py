@@ -782,6 +782,7 @@ class ActiveInferenceController:
         if self.success_counter >= 3: # Must stay converged for 3 consecutive steps
             self.publish_metrics("WAIT", {}, {'epistemic': 0.0, 'pragmatic': 0.0},
                              gmm_poses, gmm_weights)  # logs final position
+            self.runtime_counter+=1 # one additional runtime counter since we also publish an additional metrics now
             self.get_logger().info( f"!!! SUCCESS: CONVERGENCE REACHED 3 times in a row!")
             self.publish_status("SUCCESS: Convergence reached")
             return "WAIT"
@@ -790,6 +791,7 @@ class ActiveInferenceController:
         if is_pose_in_collision(self.actual_real_position, self.map_metadata, self.dist_map):
             self.publish_metrics("WAIT", {}, {'epistemic': 0.0, 'pragmatic': 0.0},
                              gmm_poses, gmm_weights)  # logs final position
+            self.runtime_counter+=1 
             self.get_logger().info(f"!!! COLLISION at {self.actual_real_position}")
             self.publish_status("FAILURE: Collision")
             return "WAIT"
@@ -798,6 +800,7 @@ class ActiveInferenceController:
         if self.runtime_counter > self.max_runtime:
             self.publish_metrics("WAIT", {}, {'epistemic': 0.0, 'pragmatic': 0.0},
                              gmm_poses, gmm_weights)  # logs final position
+            self.runtime_counter+=1 
             self.get_logger().info(f"!!! MAX RUNTIME REACHED ({self.runtime_counter}) !!!")
             self.publish_status("FAILURE: Max runtime exceeded")
             return "WAIT"
