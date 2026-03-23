@@ -281,7 +281,7 @@ class ActiveInferenceController:
         # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
         self.bimodal_score, self.is_bimodal = calculate_bimodality_position(gmm_poses, gmm_weights)
         
-        termination_action = self.check_termination_conditions()
+        termination_action = self.check_termination_conditions(gmm_poses, gmm_weights)
         if termination_action:
             return termination_action
     
@@ -503,7 +503,7 @@ class ActiveInferenceController:
         # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
         self.bimodal_score, self.is_bimodal = calculate_bimodality_position(gmm_poses, gmm_weights)
         
-        termination_action = self.check_termination_conditions()
+        termination_action = self.check_termination_conditions(gmm_poses, gmm_weights)
         if termination_action:
             return termination_action
         
@@ -585,7 +585,7 @@ class ActiveInferenceController:
         # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
         self.bimodal_score, self.is_bimodal = calculate_bimodality_position(gmm_poses, gmm_weights)
         
-        termination_action = self.check_termination_conditions()
+        termination_action = self.check_termination_conditions(gmm_poses, gmm_weights)
         if termination_action:
             return termination_action
     
@@ -638,8 +638,11 @@ class ActiveInferenceController:
         action_scores = {}
 
         if not safe_actions:
-            self.get_logger().warn("No safe actions found! Return Wait.")
-            return "WAIT"
+            self.get_logger().warn(
+                "All actions unsafe including WAIT — robot may already be in collision. "
+                "Defaulting to WAIT."
+            )
+            safe_actions = ['WAIT']
         
         for action in safe_actions:
             try:
@@ -763,7 +766,7 @@ class ActiveInferenceController:
 
         return gmm_poses, gmm_weights, gmm_variances
     
-    def check_termination_conditions(self):
+    def check_termination_conditions(self, gmm_poses, gmm_weights):
         """
         Checks if the run should end due to convergence, crash or timeout.
         Returns:
@@ -777,18 +780,24 @@ class ActiveInferenceController:
             self.success_counter = 0
 
         if self.success_counter >= 3: # Must stay converged for 3 consecutive steps
+            self.publish_metrics("WAIT", {}, {'epistemic': 0.0, 'pragmatic': 0.0},
+                             gmm_poses, gmm_weights)  # logs final position
             self.get_logger().info( f"!!! SUCCESS: CONVERGENCE REACHED 3 times in a row!")
             self.publish_status("SUCCESS: Convergence reached")
             return "WAIT"
 
         # Check 2: Crash 
         if is_pose_in_collision(self.actual_real_position, self.map_metadata, self.dist_map):
+            self.publish_metrics("WAIT", {}, {'epistemic': 0.0, 'pragmatic': 0.0},
+                             gmm_poses, gmm_weights)  # logs final position
             self.get_logger().info(f"!!! COLLISION at {self.actual_real_position}")
             self.publish_status("FAILURE: Collision")
             return "WAIT"
 
         # Check 3: Max Runtime
         if self.runtime_counter > self.max_runtime:
+            self.publish_metrics("WAIT", {}, {'epistemic': 0.0, 'pragmatic': 0.0},
+                             gmm_poses, gmm_weights)  # logs final position
             self.get_logger().info(f"!!! MAX RUNTIME REACHED ({self.runtime_counter}) !!!")
             self.publish_status("FAILURE: Max runtime exceeded")
             return "WAIT"
