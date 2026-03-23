@@ -9,9 +9,9 @@ from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, Grou
 
 def generate_launch_description():
 
-    x_pose = LaunchConfiguration('x_pose', default='0.0')
-    y_pose = LaunchConfiguration('y_pose', default='0.0')
-    yaw_pose = LaunchConfiguration('yaw_pose', default='0.0')
+    x_pose = LaunchConfiguration('x_pose', default='-0.635')
+    y_pose = LaunchConfiguration('y_pose', default='1.157')
+    yaw_pose = LaunchConfiguration('yaw_pose', default='1.0')
 
     # Package directory
     pkg_dir = get_package_share_directory('diff_drive_robot') # Make sure this is the correct package name
@@ -158,7 +158,7 @@ def generate_launch_description():
         rsp,
         gazebo_server,
         # disable GUI for run_experiment experimental run script
-        # gazebo_client, 
+        gazebo_client, 
         ros_gz_bridge,
         spawn_diff_bot,
         starting_pose_publisher,
