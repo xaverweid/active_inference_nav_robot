@@ -41,17 +41,33 @@ def load_map_metadata(map_path):
 # ─────────────────────────────────────────────
 # PATHS
 # ─────────────────────────────────────────────
+# ADAPT regarding map, seconds per step, and algorithm:
+###
+map_name = "h_map" # h_map OR my_map
+seconds_per_step = "1" # 1 OR 5
+algorithm = "d_opt_particle" # active_inf_5, active_inf_5_h3, d_opt_particle, random_walk
+###
 
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT   = os.path.dirname(SCRIPT_DIR)          # active_inference_nav_robot/
 PARENT_ROOT = os.path.dirname(REPO_ROOT) 
-starting_poses = "starting_poses_1000_h_map.csv" #starting_poses_1000_h_map.csv OR starting_poses_1000_my_map.csv          
 
-sim_id = "h_map/5/d_opt_particle" # path is /map/seconds_per_step/algorithm [h_map, my_map][1, 5][active_inf_5, active_inf_5_h3, d_opt_particle, random_walk]
+starting_poses = f"starting_poses_1000_{map_name}.csv"
+sim_id = os.path.join(map_name, seconds_per_step, algorithm)
+
 CSV_DIR = os.path.join(PARENT_ROOT, "data", sim_id) # ../data/ — outside repo
 OUTPUT_DIR = os.path.join(PARENT_ROOT, "figures", sim_id)  # ../figures/ — outside repo
-MAP_PATH   = os.path.join(REPO_ROOT, "diff_drive_robot", "maps", "h_map.pgm") # "h_map.pgm" OR "my_map.pgm"
+MAP_PATH   = os.path.join(REPO_ROOT, "diff_drive_robot", "maps", f"{map_name}.pgm") 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# --- VERIFICATION ---
+print(f"--- PATH CHECK ---")
+print(f"Targeting Map: {MAP_PATH}")
+print(f"Searching CSVs in: {CSV_DIR}")
+if not os.path.exists(MAP_PATH):
+    print(f"⚠️  WARNING: Map file not found!")
+if not os.path.exists(CSV_DIR):
+    print(f"⚠️  WARNING: Data directory not found!")
 
 # ─────────────────────────────────────────────
 # MAP METADATA
@@ -67,6 +83,8 @@ MAP_ORIGIN_Y   = meta['origin_y']
 # action_float = enumerate(actions_dict.keys()) index
 # ─────────────────────────────────────────────
 
+dt_val = float(seconds_per_step)
+
 ACTION_MAP = {
     0.0: 'WAIT',
     1.0: 'FORWARD_SMALL',
@@ -79,24 +97,45 @@ ACTION_MAP = {
 }
 
 # Make sure these are aligned with active_inference_nav_robot/active_inference_loc/active_inference_loc/utils.py
-ACTION_PARAMS = {
-    'WAIT':           {'linear': 0.0,   'angular': 0.0},
-    'FORWARD_SMALL':  {'linear': 0.15,  'angular': 0.0},
-    'FORWARD_LARGE':  {'linear': 0.30,  'angular': 0.0},
-    'ROTATE_LEFT':    {'linear': 0.0,   'angular': 0.4},
-    'ROTATE_RIGHT':   {'linear': 0.0,   'angular': -0.4},
-    'TURN_LEFT':      {'linear': 0.15,  'angular': 0.3},
-    'TURN_RIGHT':     {'linear': 0.15,  'angular': -0.3},
-    'BACKWARD_SMALL': {'linear': -0.15, 'angular': 0.0},
+ACTION_EFFECTS_short = {
+    'WAIT':          {'linear': 0.0,  'angular': 0.0},
+    'FORWARD_SMALL': {'linear': 0.15, 'angular': 0.0},
+    'FORWARD_LARGE': {'linear': 0.30, 'angular': 0.0},
+    'ROTATE_LEFT':   {'linear': 0.0,  'angular': 0.4},
+    'ROTATE_RIGHT':  {'linear': 0.0,  'angular': -0.4},
+    'TURN_LEFT':     {'linear': 0.15, 'angular': 0.3},
+    'TURN_RIGHT':    {'linear': 0.15, 'angular': -0.3},
+    'BACKWARD_SMALL':{'linear': -0.15,'angular': 0.0},
+}
+
+# These Action effects are used when t>=3, meaning the robot takes bigger steps at once
+# Assuming t = 5.0 seconds per step, keep in mind that 0.1 sec is deducted for calculation
+# Total distance = speed * (5.0 - 0.1)
+ACTION_EFFECTS_long = {
+    'WAIT':          {'linear': 0.0,   'angular': 0.0},
+    'FORWARD_SMALL': {'linear': 0.15,  'angular': 0.0}, 
+    'FORWARD_LARGE': {'linear': 0.30,  'angular': 0.0}, 
+    'ROTATE_LEFT':   {'linear': 0.0,   'angular': 0.314}, 
+    'ROTATE_RIGHT':  {'linear': 0.0,   'angular': -0.314},
+    'TURN_LEFT':     {'linear': 0.15,  'angular': 0.157}, 
+    'TURN_RIGHT':    {'linear': 0.15,  'angular': -0.157},
+    'BACKWARD_SMALL':{'linear': -0.10, 'angular': 0.0}, 
 }
 
 NO_TRANSLATION        = {'WAIT', 'ROTATE_LEFT', 'ROTATE_RIGHT'}
-ACTION_DT             = 0.9
-CONVERGENCE_THRESHOLD = 0.2
+ACTION_DT             = dt_val - 0.1
+# Dynamic Dictionary Selection
+if dt_val < 3.0:
+    ACTION_PARAMS = ACTION_EFFECTS_short
+    print(f"Using SHORT action effects (Step duration: {ACTION_DT}s)")
+else:
+    ACTION_PARAMS = ACTION_EFFECTS_long
+    print(f"Using LONG action effects (Step duration: {ACTION_DT}s)")
+
+
 BIN_SIZE_M            = 0.3
 QUIVER_GRID_M         = 0.5
 GAUSSIAN_SIGMA        = 1.5 # Increase it if the result looks noisy, decrease it if it looks too blurry.
-
 POS_ERROR_THRESHOLD = 0.5   # metres
 ROT_ERROR_THRESHOLD = 0.5   # radians
 
