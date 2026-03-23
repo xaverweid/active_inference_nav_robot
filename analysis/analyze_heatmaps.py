@@ -12,7 +12,7 @@ Expected project layout:
           my_map.pgm
     analysis/
       analyze_heatmaps.py   <- this file
-    results/                <- CSV files (git-ignored)
+    data/                <- CSV files (git-ignored)
     figures/                <- output figures (git-ignored)
 """
 
@@ -44,12 +44,13 @@ def load_map_metadata(map_path):
 
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT   = os.path.dirname(SCRIPT_DIR)          # active_inference_nav_robot/
-PARENT_ROOT = os.path.dirname(REPO_ROOT)           
+PARENT_ROOT = os.path.dirname(REPO_ROOT) 
+starting_poses = "starting_poses_1000_h_map.csv" #starting_poses_1000_h_map.csv OR starting_poses_1000_my_map.csv          
 
-sim_id = "SymmetricalMap/random_walk" # adjust to run active_inf_5, active_inf_5_h3, random_walk
-CSV_DIR = os.path.join(PARENT_ROOT, "results", sim_id) # ../results/ — outside repo
+sim_id = "h_map/5/d_opt_particle" # path is /map/seconds_per_step/algorithm [h_map, my_map][1, 5][active_inf_5, active_inf_5_h3, d_opt_particle, random_walk]
+CSV_DIR = os.path.join(PARENT_ROOT, "data", sim_id) # ../data/ — outside repo
 OUTPUT_DIR = os.path.join(PARENT_ROOT, "figures", sim_id)  # ../figures/ — outside repo
-MAP_PATH   = os.path.join(REPO_ROOT, "diff_drive_robot", "maps", "my_map.pgm") 
+MAP_PATH   = os.path.join(REPO_ROOT, "diff_drive_robot", "maps", "h_map.pgm") # "h_map.pgm" OR "my_map.pgm"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ─────────────────────────────────────────────
@@ -393,7 +394,7 @@ def save_collision_report(csv_dir, output_dir):
     if len(mid_run_col) > 0:
         poses_file = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "diff_drive_robot", "config", "starting_poses_1000.csv"
+            "diff_drive_robot", "config", starting_poses
         )
         if os.path.exists(poses_file):
             poses = pd.read_csv(poses_file)
@@ -470,6 +471,9 @@ def save_collision_report(csv_dir, output_dir):
             print(f"Saved: {out_map}")
             plt.close()
 
+        else:
+            print(f"ERROR: Didnt find path for starting poses at: {poses_file}")
+
 # --- VALID POSITION RANGES from non-collision runs ---
     valid_x, valid_y = [], []
     for _, row in summary[~summary['status'].str.contains('Collision', na=False)].iterrows():
@@ -523,7 +527,7 @@ def save_collision_report(csv_dir, output_dir):
         # --- NEW: All collision positions on map ---
     poses_file = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "diff_drive_robot", "config", "starting_poses_1000.csv"
+        "diff_drive_robot", "config", starting_poses
     )
     if os.path.exists(poses_file) and len(collisions) > 0:
         poses = pd.read_csv(poses_file)
@@ -571,6 +575,9 @@ def save_collision_report(csv_dir, output_dir):
         print(f"Saved: {out_all}")
         
         plt.close()
+
+    else:
+        print(f"ERROR: Didnt find path for starting poses at: {poses_file}")
 
 
 # ─────────────────────────────────────────────
