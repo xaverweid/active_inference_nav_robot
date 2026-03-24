@@ -243,7 +243,7 @@ def run_benchmarking():
 
             # Run trial with timeout
             start_t = time.time()
-            timeout = 300  # 10 minutes per trial
+            timeout = 420  # 7 minutes per trial maximum
             while rclpy.ok() and not logger.finished:
                 rclpy.spin_once(logger, timeout_sec=0.1)
                 elapsed = time.time() - start_t
