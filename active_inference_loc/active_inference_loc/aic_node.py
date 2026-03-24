@@ -28,11 +28,11 @@ class AICNode(Node):
         super().__init__('aic_node')
 
         # Get parameters from via aic_launch.py
-        self.declare_parameter('algo_mode', 'active_inf_5')
+        self.declare_parameter('algo_mode', 'active_inf_5_h3')
         self.algorithm_mode = self.get_parameter('algo_mode').get_parameter_value().string_value
         self.get_logger().info(f"--- LAUNCHING AIC NODE IN MODE: {self.algorithm_mode}")
 
-        self.declare_parameter('seconds_per_step', 1)
+        self.declare_parameter('seconds_per_step', 5)
         self.seconds_per_step = self.get_parameter('seconds_per_step').get_parameter_value().integer_value
         self.get_logger().info(f"--- with seconds per step t := {self.seconds_per_step}")
 

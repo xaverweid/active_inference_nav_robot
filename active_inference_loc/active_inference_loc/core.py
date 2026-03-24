@@ -290,7 +290,7 @@ class ActiveInferenceController:
         initial_weights = np.copy(self.current_weights)
         num_total_p = len(initial_particles)
 
-        # EPISTEMIC
+        # -- EPISTEMIC
         # check for n_raycast_particles to determine particle n and weights n for epistemic
         # If n_raycast_particles is > 10, use Importance Sampling
         # else GMM with gmm_poses and gmm_weights from above
@@ -312,9 +312,23 @@ class ActiveInferenceController:
         self.efe_epis_particles = particles_epistemic
         self.efe_epis_weights = weights_epistemic
 
-        # PRAGMATIC
-        # Importance Sampling always with 500 (max) 
-        # With Time horizon use GMM particles for pragmatic as well
+        # -- PRAGMATIC
+        # Importance Sampling always with 500 (max)
+         
+        sample_size_pragmatic = min(num_total_p, 500)
+        p_dist_pragmatic = initial_weights / np.sum(initial_weights)
+            
+        sample_indices_pragmatic = np.random.choice(
+            num_total_p, sample_size_pragmatic, replace=True, p=p_dist_pragmatic
+        )
+        particles_pragmatic = initial_particles[sample_indices_pragmatic]
+        weights_pragmatic = np.ones(sample_size_pragmatic) / sample_size_pragmatic
+            
+        initial_poses_pragmatic = np.copy(particles_pragmatic)
+        initial_weights_pragmatic = np.copy(weights_pragmatic)
+
+        # With Time horizon we could use GMM particles for pragmatic as well, but currently not needed
+        '''
         if n_time_horizon == 1:
             sample_size_pragmatic = min(num_total_p, 500)
             p_dist_pragmatic = initial_weights / np.sum(initial_weights)
@@ -328,8 +342,10 @@ class ActiveInferenceController:
             initial_poses_pragmatic = np.copy(particles_pragmatic)
             initial_weights_pragmatic = np.copy(weights_pragmatic)
         else:
+            
             initial_poses_pragmatic = np.copy(particles_epistemic)
             initial_weights_pragmatic = np.copy(weights_epistemic)
+        '''
 
         actions = list(self.actions_dict.keys())
 
