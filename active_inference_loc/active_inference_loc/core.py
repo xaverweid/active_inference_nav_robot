@@ -39,6 +39,8 @@ class ActiveInferenceController:
         self.efe_epis_particles = None
         self.efe_epis_weights = None
         self.efe_variances = None
+        
+        # Be aware, action sets change according to duration of action
         if seconds_per_step<3:
             self.actions_dict = ACTION_EFFECTS_short
         else:
@@ -46,8 +48,8 @@ class ActiveInferenceController:
         self.shannon_entropy = None
         self.shannon_entropy_norm = None
         self.effective_sample_size_percent = None
-        self.runtime_counter = 0
-        self.max_runtime = 300 # 5 Minutes max
+        self.runtime_counter = 0 # step counter, increments one at every step (planning and action)
+        self.max_runtime = int(150 / self.time_delta_sim) # steps, dependent on action duration - 167 steps for 0.9s and 31 for 4.9s, but same distance coverage possible
         self.convergence_parameter = 100
         self.planning_sigma = 0.7   # A value between 0.5 and 1.0 is usually 'reasonable' for planning.
         self.spatial_entropy_res = 0.25 # 25cm bins
