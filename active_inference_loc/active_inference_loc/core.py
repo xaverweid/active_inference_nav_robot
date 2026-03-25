@@ -211,6 +211,8 @@ class ActiveInferenceController:
             actual_real_yaw = (actual_real_yaw + np.pi) % (2 * np.pi) - np.pi # Standard wrap
             self.actual_real_yaw = actual_real_yaw
             
+            self.get_logger().info(f"Actual real position is now: {actual_real_position} {actual_real_yaw}")
+
             # Calculate errors
             self.position_error = np.linalg.norm(self.estimated_position - actual_real_position)
             rotational_error = abs((self.estimated_rotation - actual_real_yaw + np.pi) % (2 * np.pi) - np.pi)            
