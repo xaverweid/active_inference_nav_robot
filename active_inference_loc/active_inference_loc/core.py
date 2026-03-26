@@ -211,8 +211,6 @@ class ActiveInferenceController:
             actual_real_yaw = (actual_real_yaw + np.pi) % (2 * np.pi) - np.pi # Standard wrap
             self.actual_real_yaw = actual_real_yaw
             
-            self.get_logger().info(f"Actual real position is now: {actual_real_position} {actual_real_yaw}")
-
             # Calculate errors
             self.position_error = np.linalg.norm(self.estimated_position - actual_real_position)
             rotational_error = abs((self.estimated_rotation - actual_real_yaw + np.pi) % (2 * np.pi) - np.pi)            
@@ -222,7 +220,7 @@ class ActiveInferenceController:
             # self.get_logger().info(f"Starting Position: {self.starting_pose[:2]}, Ground Truth Position: {self.ground_truth_pose[:2]}, Actual Real Position: {actual_real_position}")
             # self.get_logger().info(f"Estimated Position: {self.estimated_position}, Actual Real Position: {actual_real_position}, Positional Error: {self.position_error:.2f}")
             # self.get_logger().info(f"Starting Yaw: {self.starting_pose[2]:.2f}, Ground Truth Yaw: {self.ground_truth_pose[2]:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}")
-            # self.get_logger().info(f"Estimated Yaw (raw): {self.estimated_rotation:.2f}, Estimated Yaw (map frame): {self.estimated_rotation_map_frame:.2f}, Rotational Error: {self.rotational_error:.2f}")
+            # self.get_logger().info(f"Estimated Yaw (raw): {self.estimated_rotation:.2f}, Rotational Error: {self.rotational_error:.2f}")
             
         else:
             self.get_logger().warn("Controller Error: Starting Pose or Ground Truth Pose not available")
@@ -350,7 +348,6 @@ class ActiveInferenceController:
             initial_poses_pragmatic = np.copy(particles_epistemic)
             initial_weights_pragmatic = np.copy(weights_epistemic)
         '''
-
         actions = list(self.actions_dict.keys())
 
         # ── EFE evaluation — single step or horizon tree ─────────────
@@ -456,7 +453,8 @@ class ActiveInferenceController:
         if total_time > self.time_delta:
             self.get_logger().warn(f"Slowdown: {total_time:.2f}s. Was higher than time_delta of {self.time_delta}")
         
-        return best_action
+        #return best_action
+        return "WAIT"
     
     def calculate_efe_epistemic(self, predicted_poses, rep_weights):
         """Calculate expected free energy for epistemic (information gain) value."""
@@ -807,6 +805,7 @@ class ActiveInferenceController:
             self.publish_status("SUCCESS: Convergence reached")
             return "WAIT"
 
+        self.get_logger().info(f"Collision Check is done on {self.actual_real_position}")
         # Check 2: Crash 
         if is_pose_in_collision(self.actual_real_position, self.map_metadata, self.dist_map):
             self.publish_metrics("WAIT", {}, {'epistemic': 0.0, 'pragmatic': 0.0},

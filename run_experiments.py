@@ -182,11 +182,12 @@ def run_benchmarking():
     poses_file_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
-        'starting_poses_1000_h_map.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv]
+        'starting_poses_1000_h_map_03-25.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv]
     ) 
+
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["active_inf_5_h3","random_walk", "active_inf_5", "d_opt_particle"]#, "active_inf_5", "active_inf_500", "active_inf_5_h3", "random_walk", "entropy_min", "d_opt_particle"]  
+    algos = ["active_inf_5_h3"] #,"random_walk", "active_inf_5", "d_opt_particle"]#, "active_inf_5", "active_inf_500", "active_inf_5_h3", "random_walk", "entropy_min", "d_opt_particle"]  
     seconds_per_step = '5' #, '1', '5'
     map_name= 'h_map'
 
@@ -202,7 +203,7 @@ def run_benchmarking():
                                 'convergence_threshold', 'bimodal_score_threshold',
                                 'planning_sigma', 'spatial_entropy_res'])
 
-        for i, p in enumerate(poses[0:200], start=0):
+        for i, p in enumerate(poses[0:1], start=0):
 
             # Hard reset every 100 runs: sleep longer to let system breathe
             if i > 0 and i % 100 == 0:
