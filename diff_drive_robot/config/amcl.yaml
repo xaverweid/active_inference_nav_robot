@@ -43,11 +43,11 @@ amcl:
     alpha5: 0.0
     
     # Measurement model (laser beam likelihoods)
-    z_hit: 0.5                     # Weight of hit measurement
+    z_hit: 0.7                      # Weight of hit measurement
     z_short: 0.01                   # Weight of short measurement
     z_max: 0.01                     # Weight of max range measurement
-    z_random: 0.2                   # Weight of random measurement. Random noise floor. The higher , the more particles survive
-    sigma_hit: 0.2                  # Std dev of hit measurement. The higher, the more survival of particles in resampling
+    z_random: 0.2                   # Weight of random measurement. Random noise floor. The higher, the more particles survive
+    sigma_hit: 0.1                  # Std dev of hit measurement. The higher, the more survival of particles in resampling
     lambda_short: 0.1               # Exponential decay for short measurements
     
     # Beam configuration
@@ -58,17 +58,17 @@ amcl:
     beam_skip_threshold: 0.3
 
     # Likelihood field configuration
-    likelihood_max_dist: 2.0        # Max distance for likelihood field
+    likelihood_max_dist: 0.4       # Max distance for likelihood field
     likelihood_max_error: 0.1       # Max error for likelihood
     
     # Recovery (handling global localization, NOT kidnapped robot)
     recovery_alpha_fast: 0.1       # Fast exponential decay (0 = disabled)
-    recovery_alpha_slow: 0.001       # Slow exponential decay (0 = disabled)
+    recovery_alpha_slow: 0.005       # Slow exponential decay (0 = disabled)
 
     # Update configuration
     update_min_d: 0.15
     update_min_a: 0.3
-    resample_interval: 2          # Resample particles every N updates
+    resample_interval: 2            # Resample particles every N updates
     tf_broadcast: true              # Broadcast map->odom transform
     transform_tolerance: 1.0        # Transform tolerance in seconds
     

@@ -1,0 +1,92 @@
+amcl:
+ ros__parameters:
+   # Set these to 0, but we will override them with a global reset as soon as aic_launch.py starts
+   use_map_topic: true
+   # Disable initial pose since we want global localization
+   set_initial_pose: false
+   always_reset_initial_pose: false
+
+
+   initial_pose_x: 0.0
+   initial_pose_y: 0.0
+   initial_pose_a: 0.0
+
+
+   # Set high covariance since robot is highly uncertain where he is at the start
+   initial_cov_xx: 10.0
+   initial_cov_yy: 10.0
+   initial_cov_aa: 3.14
+  
+   # Some versions of AMCL use this to force a rate
+   save_pose_rate: 0.5
+   # Increase particle count for global localization to cover the whole map
+   min_particles: 500
+   max_particles: 5000
+   # This ensures it doesn't just stick to the initial pose if it's wrong
+   # Use simulation time from /clock topic (important for Gazebo)
+   # should be optimal for the world.sdf file and the diff_drive_robot
+   use_sim_time: true
+
+
+   # Frame IDs
+   map_frame_id: "map"          # Global (map) frame
+   odom_frame_id: "odom"           # Odometry frame
+   base_frame_id: "base_link"      # Robot base frame
+   scan_topic: "scan"             # Lidar scan topic
+
+
+   # Motion model noise (odometry drift)
+   # alpha1: rotation noise from rotation
+   # alpha2: rotation noise from translation
+   # alpha3: translation noise from translation
+   # alpha4: translation noise from rotation
+   alpha1: 0.05
+   alpha2: 0.05
+   alpha3: 0.05
+   alpha4: 0.05
+   alpha5: 0.0
+  
+   # Measurement model (laser beam likelihoods)
+   z_hit: 0.5                     # Weight of hit measurement
+   z_short: 0.01                   # Weight of short measurement
+   z_max: 0.01                     # Weight of max range measurement
+   z_random: 0.2                   # Weight of random measurement. Random noise floor. The higher , the more particles survive
+   sigma_hit: 0.2                  # Std dev of hit measurement. The higher, the more survival of particles in resampling
+   lambda_short: 0.1               # Exponential decay for short measurements
+  
+   # Beam configuration
+   max_beams: 60                   # Maximum beams to use from scan
+   do_beamwise_likelihood: false   # Use beamwise likelihood
+   beam_skip_distance: 0.0
+   beam_skip_error_threshold: 0.9
+   beam_skip_threshold: 0.3
+
+
+   # Likelihood field configuration
+   likelihood_max_dist: 2.0        # Max distance for likelihood field
+   likelihood_max_error: 0.1       # Max error for likelihood
+  
+   # Recovery (handling global localization, NOT kidnapped robot)
+   recovery_alpha_fast: 0.1       # Fast exponential decay (0 = disabled)
+   recovery_alpha_slow: 0.001       # Slow exponential decay (0 = disabled)
+
+
+   # Update configuration
+   update_min_d: 0.15
+   update_min_a: 0.3
+   resample_interval: 2          # Resample particles every N updates
+   tf_broadcast: true              # Broadcast map->odom transform
+   transform_tolerance: 1.0        # Transform tolerance in seconds
+  
+   # Publishing
+   save_pose_rate: 5.0             # Rate to publish pose (Hz)
+  
+   # RViz / visualization
+   # Note: AMCL automatically publishes:
+   # - /amcl_pose (PoseWithCovarianceStamped) for current pose estimate
+   # - /particle_cloud (PoseArray) for particle distribution
+
+
+
+
+

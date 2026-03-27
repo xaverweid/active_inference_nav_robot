@@ -453,7 +453,8 @@ class ActiveInferenceController:
         if total_time > self.time_delta:
             self.get_logger().warn(f"Slowdown: {total_time:.2f}s. Was higher than time_delta of {self.time_delta}")
         
-        return best_action
+        #return best_action
+        return "WAIT"
     
     def calculate_efe_epistemic(self, predicted_poses, rep_weights):
         """Calculate expected free energy for epistemic (information gain) value."""
