@@ -12,8 +12,12 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
 
     pkg_diff_drive_robot = get_package_share_directory('diff_drive_robot')
-
-    gazebo_models_path, ignore_last_dir = os.path.split(pkg_diff_drive_robot)
+    gazebo_models_path = os.path.join(pkg_diff_drive_robot, 'models')
+    
+    if "GZ_SIM_RESOURCE_PATH" in os.environ:
+        os.environ["GZ_SIM_RESOURCE_PATH"] += os.pathsep + gazebo_models_path
+    else:
+        os.environ["GZ_SIM_RESOURCE_PATH"] = gazebo_models_path
     os.environ["GZ_SIM_RESOURCE_PATH"] += os.pathsep + gazebo_models_path
 
     rviz_launch_arg = DeclareLaunchArgument(
@@ -24,7 +28,7 @@ def generate_launch_description():
     # New argument to opt-in to mapping. Default is False so mapping
     # won't start unless explicitly requested.
     enable_mapping_arg = DeclareLaunchArgument(
-        'enable_mapping', default_value='false',
+        'enable_mapping', default_value='true',
         description='Enable slam_toolbox mapping (opt-in)'
     )
 

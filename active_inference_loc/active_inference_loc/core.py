@@ -453,8 +453,7 @@ class ActiveInferenceController:
         if total_time > self.time_delta:
             self.get_logger().warn(f"Slowdown: {total_time:.2f}s. Was higher than time_delta of {self.time_delta}")
         
-        #return best_action
-        return "WAIT"
+        return best_action
     
     def calculate_efe_epistemic(self, predicted_poses, rep_weights):
         """Calculate expected free energy for epistemic (information gain) value."""
@@ -805,7 +804,6 @@ class ActiveInferenceController:
             self.publish_status("SUCCESS: Convergence reached")
             return "WAIT"
 
-        self.get_logger().info(f"Collision Check is done on {self.actual_real_position}")
         # Check 2: Crash 
         if is_pose_in_collision(self.actual_real_position, self.map_metadata, self.dist_map):
             self.publish_metrics("WAIT", {}, {'epistemic': 0.0, 'pragmatic': 0.0},

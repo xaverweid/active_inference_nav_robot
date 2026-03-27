@@ -20,8 +20,8 @@ def generate_launch_description():
     models_path = os.path.join(pkg_dir, 'models')
 
     gz_resource_path = SetEnvironmentVariable(
-    name='GZ_SIM_RESOURCE_PATH',
-    value=models_path
+        name='GZ_SIM_RESOURCE_PATH',
+        value=models_path
     )   
 
     # Launch configurations
@@ -139,7 +139,7 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True},
                     {'autostart': True},
                     {'node_names': ['map_server', 'amcl']}]
-    )    
+    )  
 
     ready_msg = TimerAction(
         period=5.0,
