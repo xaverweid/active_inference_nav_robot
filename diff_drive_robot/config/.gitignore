@@ -1,9 +1,0 @@
-build/
-install/
-log/
-.venv/
-__pycache__/
-*.pyc
-frame*
-expanded_urdf/
-*.egg-info/
