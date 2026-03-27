@@ -173,7 +173,7 @@ if __name__ == '__main__':
     csv_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
-        'starting_poses_1000_h_map_03-25.csv'
+        'starting_poses_1000_h_map.csv'
     )
     
     # Generate poses with 0.28m clearance (15cm robot radius + 8cm safety + 5cm grid cell rounding error)
