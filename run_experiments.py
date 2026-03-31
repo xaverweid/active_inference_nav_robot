@@ -182,97 +182,97 @@ def run_benchmarking():
     poses_file_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
-        'starting_poses_1000_h_map_03-25.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv]
+        'starting_poses_1000_h_map.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv]
     ) 
 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["active_inf_5_h3"] #,"random_walk", "active_inf_5", "d_opt_particle"]#, "active_inf_5", "active_inf_500", "active_inf_5_h3", "random_walk", "entropy_min", "d_opt_particle"]  
-    seconds_per_step = '5' #, '1', '5'
+    algos = ["active_inf_5_h3" ,"random_walk", "active_inf_5", "d_opt_particle"]#, "active_inf_5", "active_inf_500", "active_inf_5_h3", "random_walk", "entropy_min", "d_opt_particle"]  
+    seconds_per_step = ['5'] #, '1', '5'
     map_name= 'h_map'
 
     for algo in algos:
-        
-        algo_dir = os.path.join(os.getcwd(), map_name, seconds_per_step, algo)
-        os.makedirs(algo_dir, exist_ok=True)
-        
-        summary_filename = os.path.join(algo_dir, f"summary_{map_name}_{seconds_per_step}s_{algo}_{RUN_TIMESTAMP}.csv")
-        summary_f = open(summary_filename, mode='w')
-        summary_writer = csv.writer(summary_f)
-        summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta',
-                                'convergence_threshold', 'bimodal_score_threshold',
-                                'planning_sigma', 'spatial_entropy_res'])
-
-        for i, p in enumerate(poses[0:1], start=0):
-
-            # Hard reset every 100 runs: sleep longer to let system breathe
-            if i > 0 and i % 100 == 0:
-                print(f"[PERIODIC RESET] Run {i} — extended cooldown...")
-                time.sleep(30)  # let OS fully settle
-
-            trial_id = os.path.join(algo_dir, f"trial_{map_name}_{seconds_per_step}s_{algo}_p{i+1:04d}_{RUN_TIMESTAMP}")
-            print(f"\n{'='*60}")
-            print(f">>> Starting {trial_id}")
-            print(f"{'='*60}")
-
-            logger = ExperimentLogger(trial_id)
-
-            # [1/3] Launching robot simulator
-            print(f"[1/3] Launching robot simulator at pose ({p['x']}, {p['y']})...")
-            sim_proc = subprocess.Popen([
-                "ros2", "launch", "diff_drive_robot", "robot_launch.py",
-                f"x_pose:={p['x']}", f"y_pose:={p['y']}", f"yaw_pose:={p['yaw']}"
-            ], preexec_fn=os.setsid, env=clean_env) # Pass clean_env here
-
-            active_sim_proc = sim_proc
-
-            # Wait for simulator to fully initialize and AMCL to warm up
-            print("[2/3] Waiting 12 seconds for initialization...")
-            time.sleep(12)
+        for seconds in seconds_per_step:
+            algo_dir = os.path.join(os.getcwd(), map_name, seconds, algo)
+            os.makedirs(algo_dir, exist_ok=True)
             
-            # [3/3] Launching AIC controller
-            print(f"[3/3] Launching AIC node in mode: {algo}_{seconds_per_step}s")
-            ctrl_proc = subprocess.Popen([
-                "ros2", "launch", "active_inference_loc", "aic_launch.py", 
-                "enable_viz:=false", # disable Belief Monitor Node
-                f"algo_mode:={algo}", 
-                f"spawn_x:={p['x']}", f"spawn_y:={p['y']}", f"spawn_yaw:={p['yaw']}",
-                f"seconds_per_step:={seconds_per_step}"
-            ], preexec_fn=os.setsid, env=clean_env) # Pass clean_env here
-            
-            active_ctrl_proc = ctrl_proc
+            summary_filename = os.path.join(algo_dir, f"summary_{map_name}_{seconds}s_{algo}_{RUN_TIMESTAMP}.csv")
+            summary_f = open(summary_filename, mode='w')
+            summary_writer = csv.writer(summary_f)
+            summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta',
+                                    'convergence_threshold', 'bimodal_score_threshold',
+                                    'planning_sigma', 'spatial_entropy_res'])
 
-            # Run trial with timeout
-            start_t = time.time()
-            timeout = 420  # 7 minutes per trial maximum
-            while rclpy.ok() and not logger.finished:
-                rclpy.spin_once(logger, timeout_sec=0.1)
-                elapsed = time.time() - start_t
-                if elapsed > timeout:
-                    logger.status = "TIMEOUT"
-                    print(f"[TIMEOUT] Trial exceeded {timeout}s")
-                    break
+            for i, p in enumerate(poses[0:100], start=0):
 
-            # Calculate final metrics
-               
-            summary_writer.writerow([algo, i+1, logger.status, logger.current_step, 
-                                     logger.metrics[3] if logger.metrics and len(logger.metrics) > 3 else -1.0,  # alpha
-                                     logger.metrics[4] if logger.metrics and len(logger.metrics) > 4 else -1.0,  # beta
-                                     logger.metrics[29] if logger.metrics and len(logger.metrics) > 29 else -1.0, # convergence_threshold            
-                                     logger.metrics[30] if logger.metrics and len(logger.metrics) > 30 else -1.0, # bimodal_score_threshold       
-                                     logger.metrics[31] if logger.metrics and len(logger.metrics) > 31 else -1.0, # planning_sigma           
-                                     logger.metrics[32] if logger.metrics and len(logger.metrics) > 32 else -1.0, # spatial_entropy_res
-            ])
-            summary_f.flush()
+                # Hard reset every 100 runs: sleep longer to let system breathe
+                if i > 0 and i % 100 == 0:
+                    print(f"[PERIODIC RESET] Run {i} — extended cooldown...")
+                    time.sleep(30)  # let OS fully settle
 
-            logger.csv_file.close()
-            logger.destroy_node()
-            cleanup_processes(sim_proc, ctrl_proc)
-            
-            print(f"✓ Finished {trial_id}: {logger.status} (steps={logger.current_step})")
-            print(f"  CSV saved: {trial_id}.csv")
+                trial_id = os.path.join(algo_dir, f"trial_{map_name}_{seconds}s_{algo}_p{i+1:04d}_{RUN_TIMESTAMP}")
+                print(f"\n{'='*60}")
+                print(f">>> Starting {trial_id}")
+                print(f"{'='*60}")
 
-        summary_f.close()
+                logger = ExperimentLogger(trial_id)
+
+                # [1/3] Launching robot simulator
+                print(f"[1/3] Launching robot simulator at pose ({p['x']}, {p['y']})...")
+                sim_proc = subprocess.Popen([
+                    "ros2", "launch", "diff_drive_robot", "robot_launch.py",
+                    f"x_pose:={p['x']}", f"y_pose:={p['y']}", f"yaw_pose:={p['yaw']}"
+                ], preexec_fn=os.setsid, env=clean_env) # Pass clean_env here
+
+                active_sim_proc = sim_proc
+
+                # Wait for simulator to fully initialize and AMCL to warm up
+                print("[2/3] Waiting 12 seconds for initialization...")
+                time.sleep(12)
+                
+                # [3/3] Launching AIC controller
+                print(f"[3/3] Launching AIC node in mode: {algo}_{seconds}s")
+                ctrl_proc = subprocess.Popen([
+                    "ros2", "launch", "active_inference_loc", "aic_launch.py", 
+                    "enable_viz:=false", # disable Belief Monitor Node
+                    f"algo_mode:={algo}", 
+                    f"spawn_x:={p['x']}", f"spawn_y:={p['y']}", f"spawn_yaw:={p['yaw']}",
+                    f"seconds_per_step:={seconds}"
+                ], preexec_fn=os.setsid, env=clean_env) # Pass clean_env here
+                
+                active_ctrl_proc = ctrl_proc
+
+                # Run trial with timeout
+                start_t = time.time()
+                timeout = 420  # 7 minutes per trial maximum
+                while rclpy.ok() and not logger.finished:
+                    rclpy.spin_once(logger, timeout_sec=0.1)
+                    elapsed = time.time() - start_t
+                    if elapsed > timeout:
+                        logger.status = "TIMEOUT"
+                        print(f"[TIMEOUT] Trial exceeded {timeout}s")
+                        break
+
+                # Calculate final metrics
+                
+                summary_writer.writerow([algo, i+1, logger.status, logger.current_step, 
+                                        logger.metrics[3] if logger.metrics and len(logger.metrics) > 3 else -1.0,  # alpha
+                                        logger.metrics[4] if logger.metrics and len(logger.metrics) > 4 else -1.0,  # beta
+                                        logger.metrics[29] if logger.metrics and len(logger.metrics) > 29 else -1.0, # convergence_threshold            
+                                        logger.metrics[30] if logger.metrics and len(logger.metrics) > 30 else -1.0, # bimodal_score_threshold       
+                                        logger.metrics[31] if logger.metrics and len(logger.metrics) > 31 else -1.0, # planning_sigma           
+                                        logger.metrics[32] if logger.metrics and len(logger.metrics) > 32 else -1.0, # spatial_entropy_res
+                ])
+                summary_f.flush()
+
+                logger.csv_file.close()
+                logger.destroy_node()
+                cleanup_processes(sim_proc, ctrl_proc)
+                
+                print(f"✓ Finished {trial_id}: {logger.status} (steps={logger.current_step})")
+                print(f"  CSV saved: {trial_id}.csv")
+
+            summary_f.close()
 
     rclpy.shutdown()
     print(f"\n{'='*60}")

@@ -433,7 +433,7 @@ class ActiveInferenceController:
             for action in actions:
                 _, ep, pr          = evaluate_efe_single(particles_epistemic, weights_epistemic, action)
                 details[action]    = {'epistemic': ep, 'pragmatic': pr}
-                self.get_logger().info(f"Final EFE For Action {action}: ep:{ep} and pr:{pr}")
+                # self.get_logger().info(f"Final EFE For Action {action}: ep:{ep} and pr:{pr}")
         # self.get_logger().info(f"Details for all actions: {details}")
         best_action = min(efe_scores, key=efe_scores.get)
         best_detail = details[best_action]
