@@ -27,7 +27,7 @@ def generate_launch_description():
 
     seconds_per_step_arg = DeclareLaunchArgument(
         'seconds_per_step',
-        default_value= '5',
+        default_value= '1',
         description='Time per run, preferably switch between 1 and 5 seconds'
     )
     

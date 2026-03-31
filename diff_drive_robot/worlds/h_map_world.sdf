@@ -244,7 +244,7 @@
           </material>
         </visual>
       </link>
-      <pose>-7.2500 3.6000 0 0 0 -1.5707963268</pose>
+      <pose>-7.2500 5.5000 0 0 0 -1.5707963268</pose>
       <self_collide>false</self_collide>
     </model>
 
@@ -283,7 +283,46 @@
           </material>
         </visual>
       </link>
-      <pose>-5.7500 5.3500 0 0 0 0.0000000000</pose>
+      <pose>-5.2500 5.3500 0 0 0 -0.785</pose>
+      <self_collide>false</self_collide>
+    </model>
+
+    <model name='left_north_1'>
+      <static>true</static>
+        <link name='chassis'>
+        <pose>0 0 1.5 0 0 0</pose>
+        <collision name='collision'>
+          <geometry>
+            <box><size>3 0.5 3</size></box>
+          </geometry>
+          <surface>
+            <friction><ode/></friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>model://brick_box_3x1x3/meshes/simple_box.dae</uri>
+              <scale>3 0.5 3</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <diffuse>1 1 1 1</diffuse>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+            <pbr>
+              <metal>
+                <albedo_map>model://brick_box_3x1x3/materials/textures/simple_box.png</albedo_map>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+      <pose>-6.000 6.1000 0 0 0 -0.785</pose>
       <self_collide>false</self_collide>
     </model>
 
@@ -400,7 +439,7 @@
           </material>
         </visual>
       </link>
-      <pose>1.7500 -5.1500 0 0 0 0.0000000000</pose>
+      <pose>1.7500 -7.1500 0 0 0 0.0000000000</pose>
       <self_collide>false</self_collide>
     </model>
 
@@ -439,7 +478,7 @@
           </material>
         </visual>
       </link>
-      <pose>3.2500 -3.4000 0 0 0 -1.5707963268</pose>
+      <pose>3.2500 -5.4000 0 0 0 -1.5707963268</pose>
       <self_collide>false</self_collide>
     </model>
 
@@ -521,6 +560,45 @@
       <self_collide>false</self_collide>
     </model>
 
+    <model name='right_east_3'>
+      <static>true</static>
+        <link name='chassis'>
+        <pose>0 0 1.5 0 0 0</pose>
+        <collision name='collision'>
+          <geometry>
+            <box><size>3 0.5 3</size></box>
+          </geometry>
+          <surface>
+            <friction><ode/></friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>model://brick_box_3x1x3/meshes/simple_box.dae</uri>
+              <scale>3 0.5 3</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <diffuse>1 1 1 1</diffuse>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Wood</name>
+            </script>
+            <pbr>
+              <metal>
+                <albedo_map>model://brick_box_3x1x3/materials/textures/simple_box.png</albedo_map>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+      <pose>3.2500 -2.9000 0 0 0 -1.5707963268</pose>
+      <self_collide>false</self_collide>
+    </model>
+
     <model name='pocket_north_0'>
       <static>true</static>
         <link name='chassis'>
@@ -596,45 +674,6 @@
         </visual>
       </link>
       <pose>3.2500 4.6000 0 0 0 -1.5707963268</pose>
-      <self_collide>false</self_collide>
-    </model>
-
-    <model name='pocket_south_0'>
-      <static>true</static>
-        <link name='chassis'>
-        <pose>0 0 1.5 0 0 0</pose>
-        <collision name='collision'>
-          <geometry>
-            <box><size>3 0.5 3</size></box>
-          </geometry>
-          <surface>
-            <friction><ode/></friction>
-            <bounce/>
-            <contact/>
-          </surface>
-        </collision>
-        <visual name='visual'>
-          <geometry>
-            <mesh>
-              <uri>model://brick_box_3x1x3/meshes/simple_box.dae</uri>
-              <scale>3 0.5 3</scale>
-            </mesh>
-          </geometry>
-          <material>
-            <diffuse>1 1 1 1</diffuse>
-            <script>
-              <uri>file://media/materials/scripts/gazebo.material</uri>
-              <name>Gazebo/Wood</name>
-            </script>
-            <pbr>
-              <metal>
-                <albedo_map>model://brick_box_3x1x3/materials/textures/simple_box.png</albedo_map>
-              </metal>
-            </pbr>
-          </material>
-        </visual>
-      </link>
-      <pose>5.0000 3.8500 0 0 0 0.0000000000</pose>
       <self_collide>false</self_collide>
     </model>
 
@@ -1063,7 +1102,7 @@
           </material>
         </visual>
       </link>
-      <pose>0.2500 -3.4000 0 0 0 -1.5707963268</pose>
+      <pose>0.2500 -5.4000 0 0 0 -1.5707963268</pose>
       <self_collide>false</self_collide>
     </model>
 
@@ -1105,44 +1144,57 @@
       <pose>0.2500 -2.6500 0 0 0 -1.5707963268</pose>
       <self_collide>false</self_collide>
     </model>
-
-    <model name='LitterBin'>
+    
+    <include>
+      <uri>model://cardboard_box</uri>
+      <name>cardboard_box_1</name>
+      <pose>1.90000 4.9000 0.1499994124539426 -1.533510012817295e-08 -2.7150015844914586e-09 8.2840972544311675e-11</pose>
       <static>true</static>
-      <link name='body'>
-        <pose>0 0 0 0 0 0</pose>
-        <visual name='visual'>
-          <geometry>
-            <mesh>
-              <uri>model://LitterBin/meshes/Litter.obj</uri>
-            </mesh>
-          </geometry>
-        </visual>
-        <collision name='collision'>
-          <geometry>
-            <mesh>
-              <uri>model://LitterBin/meshes/Litter.obj</uri>
-            </mesh>
-          </geometry>
-        </collision>
-        <inertial>
-          <pose>0 0 0 0 0 0</pose>
-          <mass>1</mass>
-          <inertia>
-            <ixx>1</ixx>
-            <ixy>0</ixy>
-            <ixz>0</ixz>
-            <iyy>1</iyy>
-            <iyz>0</iyz>
-            <izz>1</izz>
-          </inertia>
-        </inertial>
-        <enable_wind>false</enable_wind>
-      </link>
-      <pose>2.50000 4.0000 0 0 0 0</pose>
-      <self_collide>false</self_collide>
-    </model>
+    </include>
+    <include>
+      <uri>model://cardboard_box</uri>
+      <name>cardboard_box_2</name>
+      <pose>1.40000 4.9000 0.1499994124539426 -1.533510012817295e-08 -2.7150015844914586e-09 8.2840972544311675e-11</pose>
+      <static>true</static>
+    </include>    
+    <include>
+      <uri>model://cardboard_box</uri>
+      <name>cardboard_box_3</name>
+      <pose>1.90000 4.6200 0.1499994124539426 -1.533510012817295e-08 -2.7150015844914586e-09 8.2840972544311675e-11</pose>
+      <static>true</static>
+    </include>    
+    <include>
+      <uri>model://cardboard_box</uri>
+      <name>cardboard_box_4</name>
+      <pose>1.40000 4.6200 0.1499994124539426 -1.533510012817295e-08 -2.7150015844914586e-09 8.2840972544311675e-11</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>model://cardboard_box</uri>
+      <name>cardboard_box_5</name>
+      <pose>1.90000 4.3400 0.1499994124539426 -1.533510012817295e-08 -2.7150015844914586e-09 8.2840972544311675e-11</pose>
+      <static>true</static>
+    </include>
+    <include>
+      <uri>model://cardboard_box</uri>
+      <name>cardboard_box_6</name>
+      <pose>1.40000 4.3400 0.1499994124539426 -1.533510012817295e-08 -2.7150015844914586e-09 8.2840972544311675e-11</pose>
+      <static>true</static>
+    </include>    
+    <include>
+      <uri>model://cardboard_box</uri>
+      <name>cardboard_box_7</name>
+      <pose>1.90000 4.0600 0.1499994124539426 -1.533510012817295e-08 -2.7150015844914586e-09 8.2840972544311675e-11</pose>
+      <static>true</static>
+    </include>    
+    <include>
+      <uri>model://cardboard_box</uri>
+      <name>cardboard_box_8</name>
+      <pose>1.40000 4.0600 0.1499994124539426 -1.533510012817295e-08 -2.7150015844914586e-09 8.2840972544311675e-11</pose>
+      <static>true</static>
+    </include>
 
-    <model name='fire_hydrant'>
+    <model name='fire_hydrant_1'>
       <static>true</static>
       <link name='link'>
         <collision name='collision'>
@@ -1174,7 +1226,42 @@
         </inertial>
         <enable_wind>false</enable_wind>
       </link>
-      <pose>-6.2500 4.5000 0 0 0 0</pose>
+      <pose>-4.8000 -4.6000 0 0 0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='fire_hydrant_2'>
+      <static>true</static>
+      <link name='link'>
+        <collision name='collision'>
+          <geometry>
+            <mesh>
+              <uri>model://fire_hydrant/meshes/fire_hydrant.dae</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>model://fire_hydrant/meshes/fire_hydrant.dae</uri>
+            </mesh>
+          </geometry>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>-6.8000 -4.6000 0 0 0 0</pose>
       <self_collide>false</self_collide>
     </model>
   </world>

@@ -51,7 +51,7 @@ class ActiveInferenceController:
         self.runtime_counter = 0 # step counter, increments one at every step (planning and action)
         self.max_runtime = int(150 / self.time_delta_sim) # steps, dependent on action duration - 167 steps for 0.9s and 31 for 4.9s, but same distance coverage possible
         self.convergence_parameter = 100
-        self.planning_sigma = 0.7   # A value between 0.5 and 1.0 is usually 'reasonable' for planning.
+        self.planning_sigma = 0.5   # A value between 0.5 and 1.0 is usually 'reasonable' for planning.
         self.spatial_entropy_res = 0.25 # 25cm bins
 
         self.wait_streak = 0
@@ -205,11 +205,13 @@ class ActiveInferenceController:
             # Now add to starting position
             actual_real_position = self.starting_pose[:2] + np.array([rotated_x, rotated_y])
             self.actual_real_position = actual_real_position
-            
+          
             # Yaw is additive (angles add)
             actual_real_yaw = self.starting_pose[2] + self.ground_truth_pose[2]
             actual_real_yaw = (actual_real_yaw + np.pi) % (2 * np.pi) - np.pi # Standard wrap
             self.actual_real_yaw = actual_real_yaw
+            # self.get_logger().info(f"Starting Pose: {self.starting_pose[:3]}, New Ground Truth Pose: {self.ground_truth_pose[:3]}")
+            # self.get_logger().info(f"New Actual Real Position: {actual_real_position} and yaw {actual_real_yaw:.2f}")
             
             # Calculate errors
             self.position_error = np.linalg.norm(self.estimated_position - actual_real_position)
@@ -419,7 +421,7 @@ class ActiveInferenceController:
                 efe_scores[action]      = total_efe
                 details[action]         = {'epistemic': ep, 'pragmatic': pr}
                 # self.get_logger().info("Single Time Horizon")
-                # self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {ep:.2f}, Pragmatic: {pr:.2f})")
+                self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {ep:.2f}, Pragmatic: {pr:.2f})")
 
         else:
             # Horizon tree search — GMM clusters only
@@ -430,7 +432,7 @@ class ActiveInferenceController:
             for action in actions:
                 _, ep, pr          = evaluate_efe_single(particles_epistemic, weights_epistemic, action)
                 details[action]    = {'epistemic': ep, 'pragmatic': pr}
-                # self.get_logger().info(f"Final EFE For Action {action}: ep:{ep} and pr:{pr}")
+                self.get_logger().info(f"Final EFE For Action {action}: ep:{ep} and pr:{pr}")
         # self.get_logger().info(f"Details for all actions: {details}")
         best_action = min(efe_scores, key=efe_scores.get)
         best_detail = details[best_action]
@@ -452,9 +454,7 @@ class ActiveInferenceController:
         # self.get_logger().info(f"Final EFE Scores: {efe_scores}. Time for efe calc is {total_time}")
         if total_time > self.time_delta:
             self.get_logger().warn(f"Slowdown: {total_time:.2f}s. Was higher than time_delta of {self.time_delta}")
-        
-        #return best_action
-        return "WAIT"
+        return best_action
     
     def calculate_efe_epistemic(self, predicted_poses, rep_weights):
         """Calculate expected free energy for epistemic (information gain) value."""
@@ -806,11 +806,38 @@ class ActiveInferenceController:
             return "WAIT"
 
         # Check 2: Crash 
+        # self.get_logger().info(f"Checking collision at actual position: {self.actual_real_position} with yaw {self.actual_real_yaw}")
         if is_pose_in_collision(self.actual_real_position, self.map_metadata, self.dist_map):
             self.publish_metrics("WAIT", {}, {'epistemic': 0.0, 'pragmatic': 0.0},
                              gmm_poses, gmm_weights)  # logs final position
             self.runtime_counter+=1 
             self.get_logger().info(f"!!! COLLISION at {self.actual_real_position}")
+            #DEBUG pixel conversion
+            # At collision time, log both:
+            self.get_logger().info("Debugging pixel conversion at collision point:")
+            self.get_logger().info(f"Map metadata: origin=({self.map_metadata['origin_x']}, {self.map_metadata['origin_y']}), resolution={self.map_metadata['resolution']}, height={self.map_metadata['height']}")
+            data_2d = self.map_metadata['data']  # shape (height, width), values 0/100/-1
+
+            self.get_logger().info(f"data2d[3][3]: {data_2d[3][3]} (just to check indexing)")
+            world_x, world_y = self.actual_real_position
+            origin_x = self.map_metadata['origin_x']
+            origin_y = self.map_metadata['origin_y']
+            resolution = self.map_metadata['resolution']
+            height = self.map_metadata['height']
+
+            # Current conversion (likely what you have)
+            px_current = int((world_x - origin_x) / resolution)
+            py_current = (height - 1) - int((world_y - origin_y) / resolution)
+
+            # Fixed conversion
+            px_fixed = round((world_x - origin_x) / resolution)
+            py_fixed  = (height - 1) - round((world_y - origin_y) / resolution)
+
+            self.get_logger().info(f"world=({world_x:.4f}, {world_y:.4f})")
+            self.get_logger().info(f"current pixel=({px_current},{py_current}) val={data_2d[py_current][px_current]}")
+            self.get_logger().info(f"fixed   pixel=({px_fixed},{py_fixed})   val={data_2d[py_fixed][px_fixed]}")
+
+
             self.publish_status("FAILURE: Collision")
             return "WAIT"
 

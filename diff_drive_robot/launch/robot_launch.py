@@ -9,8 +9,8 @@ from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, Grou
 
 def generate_launch_description():
 
-    x_pose = LaunchConfiguration('x_pose', default='-2.15')
-    y_pose = LaunchConfiguration('y_pose', default='0.11')
+    x_pose = LaunchConfiguration('x_pose', default='-2.0')
+    y_pose = LaunchConfiguration('y_pose', default='0.0')
     yaw_pose = LaunchConfiguration('yaw_pose', default='0.0')
 
     # Package directory
@@ -154,7 +154,7 @@ def generate_launch_description():
         declare_world,
 
         # Launch the nodes
-        # rviz2,
+        rviz2,
         rsp,
         gazebo_server,
         # disable GUI for run_experiment experimental run script
