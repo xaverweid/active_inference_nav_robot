@@ -58,12 +58,12 @@ amcl:
     beam_skip_threshold: 0.3
 
     # Likelihood field configuration
-    likelihood_max_dist: 0.8       # Max distance for likelihood field
+    likelihood_max_dist: 2.0       # Max distance for likelihood field
     likelihood_max_error: 0.1       # Max error for likelihood
     
     # Recovery (handling global localization, NOT kidnapped robot)
     recovery_alpha_fast: 0.1       # Fast exponential decay (0 = disabled)
-    recovery_alpha_slow: 0.002       # Slow exponential decay (0 = disabled)
+    recovery_alpha_slow: 0.001       # Slow exponential decay (0 = disabled)
 
     # Update configuration
     update_min_d: 0.15

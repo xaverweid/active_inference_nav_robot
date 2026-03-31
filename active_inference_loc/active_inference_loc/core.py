@@ -355,6 +355,7 @@ class ActiveInferenceController:
         # ── EFE evaluation — single step or horizon tree ─────────────
         def evaluate_efe_single(particles_ep, weights_ep, action):
             """Compute EFE for one action at one step."""
+            
             pred_ep = predict_motion_batch(particles_ep, action, self.actions_dict, dt=self.time_delta_sim)
             raw_epistemic = self.calculate_efe_epistemic(pred_ep, weights_ep)
 

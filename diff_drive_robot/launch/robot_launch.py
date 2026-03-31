@@ -154,7 +154,7 @@ def generate_launch_description():
         declare_world,
 
         # Launch the nodes
-        rviz2,
+        # rviz2,
         rsp,
         gazebo_server,
         # disable GUI for run_experiment experimental run script
