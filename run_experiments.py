@@ -191,9 +191,11 @@ def run_benchmarking():
     seconds_per_step = ['5'] #, '1', '5'
     map_name= 'h_map'
 
+    data_root = os.path.join(os.getcwd(), "src", "data")
+
     for algo in algos:
         for seconds in seconds_per_step:
-            algo_dir = os.path.join(os.getcwd(), map_name, seconds, algo)
+            algo_dir = os.path.join(data_root, map_name, seconds, algo)
             os.makedirs(algo_dir, exist_ok=True)
             
             summary_filename = os.path.join(algo_dir, f"summary_{map_name}_{seconds}s_{algo}_{RUN_TIMESTAMP}.csv")
