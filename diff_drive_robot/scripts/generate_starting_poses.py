@@ -34,16 +34,16 @@ def load_map(map_yaml_path):
     origin     = map_data['origin'][:2]
     return free_space, resolution, origin
 
-def world_to_grid(x, y, resolution, origin):
+def world_to_grid(x, y, resolution, origin, height):
     """Convert world coordinates (meters) to grid coordinates (pixels)."""
     grid_x = int((x - origin[0]) / resolution)
-    grid_y = int((y - origin[1]) / resolution)
+    grid_y = int(height - (y - origin[1]) / resolution)
     return grid_x, grid_y
 
-def grid_to_world(grid_x, grid_y, resolution, origin):
+def grid_to_world(grid_x, grid_y, resolution, origin, height):
     """Convert grid coordinates (pixels) to world coordinates (meters)."""
     x = grid_x * resolution + origin[0]
-    y = grid_y * resolution + origin[1]
+    y = (height - grid_y) * resolution + origin[1]
     return x, y
 
 def is_valid_position(x, y, free_space, resolution, origin, min_clearance=0.28):
@@ -64,10 +64,10 @@ def is_valid_position(x, y, free_space, resolution, origin, min_clearance=0.28):
     clearance_cells = int(np.ceil(min_clearance / resolution))
     
     # Convert world coordinates to grid
-    grid_x, grid_y = world_to_grid(x, y, resolution, origin)
+    height, width = free_space.shape
+    grid_x, grid_y = world_to_grid(x, y, resolution, origin, height)
     
     # Check if within map bounds
-    height, width = free_space.shape
     if not (0 <= grid_x < width and 0 <= grid_y < height):
         return False
     
@@ -126,7 +126,7 @@ def generate_valid_starting_poses(map_yaml_path, num_poses=1000, min_clearance=0
         grid_y = np.random.randint(0, height)
         
         # Convert to world coordinates
-        x, y = grid_to_world(grid_x, grid_y, resolution, origin)
+        x, y = grid_to_world(grid_x, grid_y, resolution, origin, height)
         
         # Random orientation
         yaw = np.random.uniform(-np.pi, np.pi)
@@ -163,7 +163,7 @@ def save_poses_to_csv(poses, csv_path):
 # Main execution
 if __name__ == '__main__':
     # Define paths
-    world_yaml_path='h_map.yaml'
+    world_yaml_path='my_map.yaml'
     map_yaml_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'maps',
@@ -173,7 +173,7 @@ if __name__ == '__main__':
     csv_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
-        'starting_poses_1000_h_map.csv'
+        'starting_poses_1000_my_map.csv'
     )
     
     # Generate poses with 0.28m clearance (15cm robot radius + 8cm safety + 5cm grid cell rounding error)

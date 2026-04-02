@@ -394,8 +394,8 @@ def save_collision_report(csv_dir, output_dir):
     summary = pd.read_csv(os.path.join(csv_dir, summary_files[0]))
 
     collisions  = summary[summary['status'].str.contains('Collision', na=False)].copy()
-    instant_col = collisions[collisions['steps'] == 0]
-    mid_run_col = collisions[collisions['steps'] > 0]
+    instant_col = collisions[collisions['steps'] == 1]
+    mid_run_col = collisions[collisions['steps'] > 1]
 
     out = os.path.join(output_dir, 'collision_report.txt')
     with open(out, 'w') as f:
@@ -420,7 +420,7 @@ def save_collision_report(csv_dir, output_dir):
             f.write('\n\n')
 
         f.write('='*60 + '\n')
-        f.write('COLLISIONS AT START (step=0) — bad spawn positions\n')
+        f.write('COLLISIONS AT START (step=1) — bad spawn positions\n')
         f.write('='*60 + '\n')
         if len(instant_col) == 0:
             f.write('None.\n\n')
