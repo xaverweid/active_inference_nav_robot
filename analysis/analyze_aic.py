@@ -45,7 +45,7 @@ def load_map_metadata(map_path):
 ###
 map_name = "h_map" # h_map OR my_map
 seconds_per_step = "5" # 1 OR 5
-algorithm = "active_inf_5" # active_inf_5, active_inf_5_h3, d_opt_particle, random_walk
+algorithm = "d_opt_particle" # active_inf_5, active_inf_5_h3, d_opt_particle, random_walk
 ###
 
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -204,7 +204,7 @@ def load_map(map_path):
     img = plt.imread(map_path)
     if img.ndim == 3:
         img = img[:, :, 0]
-    return img
+    return np.flipud(img)
 
 # ─────────────────────────────────────────────
 # PREPARE DATAFRAME
@@ -242,8 +242,11 @@ def prepare_df(df):
 
 def get_map_extent(map_img):
     h, w = map_img.shape[:2]
-    return [MAP_ORIGIN_X, MAP_ORIGIN_X + w * MAP_RESOLUTION,
-            MAP_ORIGIN_Y, MAP_ORIGIN_Y + h * MAP_RESOLUTION]
+    return [MAP_ORIGIN_X, 
+            MAP_ORIGIN_X + w * MAP_RESOLUTION,
+             #might need to be switched with map_origin_y
+            MAP_ORIGIN_Y,
+            MAP_ORIGIN_Y + h * MAP_RESOLUTION]
 
 def get_ranges(map_img, df):
     if map_img is not None:
