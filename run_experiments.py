@@ -187,8 +187,8 @@ def run_benchmarking():
 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["active_inf_5_h3" ,"random_walk", "active_inf_5", "d_opt_particle"]#, "active_inf_5", "active_inf_500", "active_inf_5_h3", "random_walk", "entropy_min", "d_opt_particle"]  
-    seconds_per_step = ['5'] #, '1', '5'
+    algos = ["d_opt_particle"]#, "active_inf_5", "active_inf_500", "active_inf_5_h3", "random_walk", "entropy_min", "d_opt_particle"]  
+    seconds_per_step = ['1', '5'] #, '1', '5'
     map_name= 'h_map'
 
     data_root = os.path.join(os.getcwd(), "src", "data")
@@ -205,7 +205,7 @@ def run_benchmarking():
                                     'convergence_threshold', 'bimodal_score_threshold',
                                     'planning_sigma', 'spatial_entropy_res'])
 
-            for i, p in enumerate(poses[0:100], start=0):
+            for i, p in enumerate(poses[0:200], start=0):
 
                 # Hard reset every 100 runs: sleep longer to let system breathe
                 if i > 0 and i % 100 == 0:

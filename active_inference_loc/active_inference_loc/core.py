@@ -634,14 +634,17 @@ class ActiveInferenceController:
                     if is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
                         action_is_safe = False
                         break                          
-                if not action_is_safe:
-                    continue
-                safe_actions.append(action)
+                if action_is_safe:
+                    safe_actions.append(action)
 
         else:
             # Position not available yet, skip collision checking
             self.get_logger().warn("Actual position not available, using all actions")
             safe_actions = available_actions
+
+        self.get_logger().info(f"Collision filter: {len(safe_actions)}/{len(available_actions)} safe")
+        self.get_logger().info(f"Safe actions: {safe_actions}")
+
         
         # --- PHASE 2.2: ACTION EVALUATION: SCORING according to d_opt
         # Scoring uses GMM only — same as epistemic in active inference
@@ -704,6 +707,7 @@ class ActiveInferenceController:
         
         # Select the action with the highest score from safe actions (action_scores only safe_actions)
         best_action = max(action_scores, key=action_scores.get)
+        self.get_logger().info(f"D-Optimality Scores: {action_scores}. Best action: {best_action}")
 
         # Prepare metrics for logging (matching AIC structure)
         efe_scores = {a: action_scores.get(a, 0.0) for a in available_actions}
