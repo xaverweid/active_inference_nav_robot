@@ -92,6 +92,7 @@ class ActiveInferenceController:
         self.last_raw_pragmatic = None
         self.bimodal_score = None
         self.is_bimodal = None
+        self.is_wait_streak_reset = 0.0 # for logging whether the wait streak was reset this step (1.0 if yes, 0.0 if no)
 
         self.action_to_id = {
             action: idx for idx, action in enumerate(self.actions_dict.keys())
@@ -642,8 +643,8 @@ class ActiveInferenceController:
             self.get_logger().warn("Actual position not available, using all actions")
             safe_actions = available_actions
 
-        self.get_logger().info(f"Collision filter: {len(safe_actions)}/{len(available_actions)} safe")
-        self.get_logger().info(f"Safe actions: {safe_actions}")
+        # self.get_logger().info(f"Collision filter: {len(safe_actions)}/{len(available_actions)} safe")
+        # self.get_logger().info(f"Safe actions: {safe_actions}")
 
         
         # --- PHASE 2.2: ACTION EVALUATION: SCORING according to d_opt
@@ -739,9 +740,12 @@ class ActiveInferenceController:
             - safe_actions: list of collision-free actions
         Output: action string (potentially overridden)
         """
+        self.is_wait_streak_reset = 0.0
+
         if best_action == "WAIT":
             self.wait_streak += 1
             if self.wait_streak > 2:
+                self.is_wait_streak_reset = 1.0
                 if self.algo_mode == "random_walk":
                     # For random walk, we have to choose a random new action from the safe_actions list
                     safe_alternatives = [a for a in safe_actions if a != "WAIT"]
@@ -755,11 +759,11 @@ class ActiveInferenceController:
                         self.get_logger().warn("No safe alternatives to WAIT! Robot trapped.")
                         return "WAIT"  # Keep WAIT if truly trapped
 
-                if self.algo_mode == "d_opt_particle":  
+                elif self.algo_mode == "d_opt_particle":  
                     # For d_opt control, we choose from the safe_actions based on highest EFE score (which is the opposite of the usual since we want to maximize information gain)
-                    safe_efe = {a: efe_scores[a] for a in safe_actions if a != "WAIT"}
-                    if safe_efe:
-                        second_best_action = max(safe_efe, key=safe_efe.get)
+                    safe_fisher = {a: efe_scores[a] for a in safe_actions if a != "WAIT"}
+                    if safe_fisher:
+                        second_best_action = max(safe_fisher, key=safe_fisher.get)
                         self.get_logger().info(f"D_Opt: WAIT chosen > 2 times. Using second-best safe action: {second_best_action}")
                         self.wait_streak = 0
                         return second_best_action
@@ -776,6 +780,8 @@ class ActiveInferenceController:
                     else:
                         self.get_logger().warn("No non-WAIT actions available!")
                         return "WAIT"
+            else: 
+                self.is_wait_streak_reset = 0.0
         else:
             self.wait_streak = 0
         
@@ -961,6 +967,7 @@ class ActiveInferenceController:
             float(self.bimodal_score_threshold), #30
             float(self.planning_sigma),   # 31
             float(self.spatial_entropy_res), #32
+            float(self.is_wait_streak_reset)  #33
         ]
 
         self.metrics_pub.publish(metrics_msg)

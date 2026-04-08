@@ -39,6 +39,7 @@ class ExperimentLogger(Node):
         'peak1_x', 'peak1_y', 'peak1_yaw',
         'peak2_x', 'peak2_y', 'peak2_yaw',
         'peak_distance',
+        'is_wait_streak_reset'
         ])
 
         self.metrics = None
@@ -91,6 +92,7 @@ class ExperimentLogger(Node):
                 self.metrics[26] if len(self.metrics) > 26 else -1.0,  # peak2_y
                 self.metrics[27] if len(self.metrics) > 27 else -1.0,  # peak2_yaw
                 self.metrics[28] if len(self.metrics) > 28 else -1.0,  # peak_distance
+                self.metrics[33] if len(self.metrics) > 33 else -1.0,  # is_wait_streak_reset
 
             ])
             self.current_step += 1
@@ -205,7 +207,7 @@ def run_benchmarking():
                                     'convergence_threshold', 'bimodal_score_threshold',
                                     'planning_sigma', 'spatial_entropy_res'])
 
-            for i, p in enumerate(poses[0:200], start=0):
+            for i, p in enumerate(poses[0:1], start=0):
 
                 # Hard reset every 100 runs: sleep longer to let system breathe
                 if i > 0 and i % 100 == 0:
