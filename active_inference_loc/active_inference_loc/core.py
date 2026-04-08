@@ -707,7 +707,7 @@ class ActiveInferenceController:
         
         # Select the action with the highest score from safe actions (action_scores only safe_actions)
         best_action = max(action_scores, key=action_scores.get)
-        self.get_logger().info(f"D-Optimality Scores: {action_scores}. Best action: {best_action}")
+        # self.get_logger().info(f"D-Optimality Scores: {action_scores}. Best action: {best_action}")
 
         # Prepare metrics for logging (matching AIC structure)
         efe_scores = {a: action_scores.get(a, 0.0) for a in available_actions}
@@ -715,8 +715,7 @@ class ActiveInferenceController:
         
         # --- PHASE 3: FINALIZE & PUBLISH ---
         best_action = self.handle_wait_streak(best_action, efe_scores, safe_actions=safe_actions)
-        # self.get_logger().info(f"D-Optimality: {best_action}")
-        # self.get_logger().info(f"Full scores: {efe_scores}")
+
 
         self.runtime_counter += 1
         self.chosen_action = best_action
@@ -735,7 +734,7 @@ class ActiveInferenceController:
         """
         If WAIT is chosen 3 times in a row, pick an alternative action.
         Input: 
-            - best_action: The action with the lowest score for the current decision step
+            - best_action: The action with the lowest score for the current decision step, d_opt highest score!
             - efe_scores: dict of action to EFE score
             - safe_actions: list of collision-free actions
         Output: action string (potentially overridden)
@@ -743,25 +742,40 @@ class ActiveInferenceController:
         if best_action == "WAIT":
             self.wait_streak += 1
             if self.wait_streak > 2:
-                if self.algo_mode != "random_walk":  
-                    # For non-random control all available actions are basically safe, therefore ignore safe_actions variable
-                    sorted_actions = sorted(efe_scores, key=efe_scores.get)
-                    second_best_action = sorted_actions[1]
-                    self.get_logger().info("WAIT chosen > 2 times. Using second-best action.")
-                    self.wait_streak = 0
-                    return second_best_action
-                else: 
+                if self.algo_mode == "random_walk":
                     # For random walk, we have to choose a random new action from the safe_actions list
                     safe_alternatives = [a for a in safe_actions if a != "WAIT"]
                 
                     if len(safe_alternatives) > 0:
                         random_action = np.random.choice(safe_alternatives)
-                        self.get_logger().info(f"Random Walk: Choosing safe random action instead of WAIT: {random_action}")
+                        self.get_logger().info(f"Random Walk: WAIT chosen > 2 times. Using random safe action: {random_action}")
                         self.wait_streak = 0
                         return random_action
                     else:
                         self.get_logger().warn("No safe alternatives to WAIT! Robot trapped.")
                         return "WAIT"  # Keep WAIT if truly trapped
+
+                if self.algo_mode == "d_opt_particle":  
+                    # For d_opt control, we choose from the safe_actions based on highest EFE score (which is the opposite of the usual since we want to maximize information gain)
+                    safe_efe = {a: efe_scores[a] for a in safe_actions if a != "WAIT"}
+                    if safe_efe:
+                        second_best_action = max(safe_efe, key=safe_efe.get)
+                        self.get_logger().info(f"D_Opt: WAIT chosen > 2 times. Using second-best safe action: {second_best_action}")
+                        self.wait_streak = 0
+                        return second_best_action
+                    else:
+                        return "WAIT"
+                else: 
+                    # Active inference: minimize EFE, filter to safe actions only
+                    safe_efe = {a: efe_scores[a] for a in safe_actions if a != "WAIT"}
+                    if safe_efe:
+                        second_best_action = min(safe_efe, key=safe_efe.get)
+                        self.get_logger().info(f"WAIT chosen > 2 times. Using second-best safe action: {second_best_action}")
+                        self.wait_streak = 0
+                        return second_best_action
+                    else:
+                        self.get_logger().warn("No safe alternatives to WAIT! Robot trapped.")
+                        return "WAIT"
         else:
             self.wait_streak = 0
         
