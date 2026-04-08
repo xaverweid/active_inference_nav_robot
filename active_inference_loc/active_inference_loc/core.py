@@ -774,7 +774,7 @@ class ActiveInferenceController:
                         self.wait_streak = 0
                         return second_best_action
                     else:
-                        self.get_logger().warn("No safe alternatives to WAIT! Robot trapped.")
+                        self.get_logger().warn("No non-WAIT actions available!")
                         return "WAIT"
         else:
             self.wait_streak = 0
