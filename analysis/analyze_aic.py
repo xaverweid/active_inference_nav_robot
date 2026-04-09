@@ -153,7 +153,8 @@ COLUMN_NAMES = [
     'bimodal_score', 'is_bimodal',
     'peak1_x', 'peak1_y', 'peak1_yaw',
     'peak2_x', 'peak2_y', 'peak2_yaw',
-    'peak_distance'
+    'peak_distance', 
+    'is_wait_streak_reset'
 ]
 
 def load_all_csvs(csv_dir):
