@@ -423,7 +423,7 @@ class ActiveInferenceController:
                 efe_scores[action]      = total_efe
                 details[action]         = {'epistemic': ep, 'pragmatic': pr}
                 # self.get_logger().info("Single Time Horizon")
-                self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {ep:.2f}, Pragmatic: {pr:.2f})")
+                # self.get_logger().info(f"Action: {action} | EFE: {total_efe:.2f} (Epistemic: {ep:.2f}, Pragmatic: {pr:.2f})")
 
         else:
             # Horizon tree search — GMM clusters only
