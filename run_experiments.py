@@ -17,8 +17,6 @@ import sys
 
 class ExperimentLogger(Node):
     """Subscribes to ROS topics and logs experiment data to CSV."""
-
-    # TODO: We could also add parameter conditions (planning_sigma, alpha_epistemic, n_clusters) to the CSV for better analysis later on.
     
     def __init__(self, trial_name):
         super().__init__('exp_logger')
@@ -184,14 +182,20 @@ def run_benchmarking():
     poses_file_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
-        'starting_poses_1000_h_map.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv]
+        'starting_poses_1000_my_map.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv]
     ) 
+    """
+    PARAMETERS:
+    Make sure to have the robot_launch.py configured with the correct world file and map file that correspond to your experiment (h_map vs my_map) for both
+    .pgm and .yaml files
+
+    """
 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["d_opt_particle"]#, "active_inf_5", "active_inf_500", "active_inf_5_h3", "random_walk", "entropy_min", "d_opt_particle"]  
+    algos = ["entropy_min"]  
     seconds_per_step = ['1', '5'] #, '1', '5'
-    map_name= 'h_map'
+    map_name= 'h_map' # 'h_map', 'my_map'
 
     data_root = os.path.join(os.getcwd(), "src", "data")
 
@@ -207,7 +211,7 @@ def run_benchmarking():
                                     'convergence_threshold', 'bimodal_score_threshold',
                                     'planning_sigma', 'spatial_entropy_res'])
 
-            for i, p in enumerate(poses[0:1], start=0):
+            for i, p in enumerate(poses[0:200], start=0):
 
                 # Hard reset every 100 runs: sleep longer to let system breathe
                 if i > 0 and i % 100 == 0:
