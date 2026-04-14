@@ -959,7 +959,8 @@ def save_run_statistics(df, csv_dir, output_dir):
           * True success:    converged + low pos & rot error
           * False success:   converged + high pos or rot error
           * Collision:       mid-run collision (steps > 0)
-          * Other failure:   timeout, unknown
+          * Timeout:         reached max steps, didn't converge in time 
+          * Other failure:   timeout, unknown (ROS error etc)
     """
     valid_summary = load_valid_summary(csv_dir)
 
@@ -977,10 +978,10 @@ def save_run_statistics(df, csv_dir, output_dir):
         status = str(row.get('status', ''))
         steps  = row.get('steps', 0)
 
-        if 'Collision' in status and steps > 0:
+        if 'FAILURE: Collision' in status and steps > 0:
             return 'mid_run_collision'
 
-        if 'Convergence' in status or 'SUCCESS' in status:
+        if 'SUCCESS: Convergence reached' in status:
             run_id   = row.get('pose_index', -1) - 1  # pose_index is 1-based
             # Look up final errors from the step data
             if run_id in final_per_run.index:
@@ -991,10 +992,10 @@ def save_run_statistics(df, csv_dir, output_dir):
                         return 'true_success'
                     else:
                         return 'false_success'
-            return 'true_success'  # no error data available, assume ok
+            return 'false_success'  # no error data available, assume ok
 
-        if 'TIMEOUT' in status or 'Timeout' in status:
-            return 'timeout'
+        if 'FAILURE: Max runtime exceeded' in status:
+            return 'timeout' 
 
         return 'other_failure'
 

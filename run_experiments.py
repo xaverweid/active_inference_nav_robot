@@ -179,18 +179,19 @@ def run_benchmarking():
     global active_sim_proc, active_ctrl_proc
     rclpy.init()
     clean_env = get_clean_env()
-    poses_file_path = os.path.join(
-        get_package_share_directory('diff_drive_robot'),
-        'config',
-        'starting_poses_1000_my_map.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv]
-    ) 
+    
+    
     """
     PARAMETERS:
     Make sure to have the robot_launch.py configured with the correct world file and map file that correspond to your experiment (h_map vs my_map) for both
-    .pgm and .yaml files
+    .sdf and .yaml files in robot_launch.py 
 
     """
-
+    poses_file_path = os.path.join(
+        get_package_share_directory('diff_drive_robot'),
+        'config',
+        'starting_poses_1000_h_map.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv]
+    ) 
     poses = load_poses_from_csv(poses_file_path)
 
     algos = ["entropy_min"]  
