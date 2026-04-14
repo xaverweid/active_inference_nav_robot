@@ -154,16 +154,16 @@ def generate_launch_description():
         declare_world,
 
         # Launch the nodes
-        rviz2,
+        # rviz2,
         rsp,
         gazebo_server,
         # disable GUI for run_experiment experimental run script
         gazebo_client, 
         ros_gz_bridge,
         spawn_diff_bot,
-        #starting_pose_publisher,
-        #start_map_server,
-        #start_amcl,
-        #start_lifecycle_manager,
-        #ready_msg,
+        starting_pose_publisher,
+        start_map_server,
+        start_amcl,
+        start_lifecycle_manager,
+        ready_msg,
     ])
