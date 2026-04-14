@@ -285,7 +285,7 @@ class ActiveInferenceController:
         
         # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
         self.bimodal_score, self.is_bimodal = calculate_bimodality_position(gmm_poses, gmm_weights)
-        
+        self.get_logger().info(f"Check collision on Current position: {self.actual_real_position} with rotation {self.actual_real_yaw:.2f}")
         termination_action = self.check_termination_conditions(gmm_poses, gmm_weights)
         if termination_action:
             return termination_action
@@ -816,6 +816,7 @@ class ActiveInferenceController:
             str: 'WAIT' if a condition is met, otherwise None.
         """
         # Check 1: Convergence
+
         if self.convergence_parameter < self.convergence_threshold and self.bimodal_score < self.bimodal_score_threshold:
             self.success_counter +=1
             self.get_logger().info(f"Convergence and Non-binomal achieved. Count: {self.success_counter}")
@@ -831,7 +832,7 @@ class ActiveInferenceController:
             return "WAIT"
 
         # Check 2: Crash 
-        # self.get_logger().info(f"Checking collision at actual position: {self.actual_real_position} with yaw {self.actual_real_yaw}")
+        self.get_logger().info(f"Checking collision at actual position: {self.actual_real_position} with yaw {self.actual_real_yaw}")
         if is_pose_in_collision(self.actual_real_position, self.map_metadata, self.dist_map):
             self.publish_metrics("WAIT", {}, {'epistemic': 0.0, 'pragmatic': 0.0},
                              gmm_poses, gmm_weights)  # logs final position

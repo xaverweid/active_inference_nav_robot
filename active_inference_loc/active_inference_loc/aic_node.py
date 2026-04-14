@@ -28,11 +28,11 @@ class AICNode(Node):
         super().__init__('aic_node')
 
         # Get parameters from via aic_launch.py
-        self.declare_parameter('algo_mode', 'active_inf_5_h3')
+        self.declare_parameter('algo_mode', 'active_inf_5')
         self.algorithm_mode = self.get_parameter('algo_mode').get_parameter_value().string_value
         self.get_logger().info(f"--- LAUNCHING AIC NODE IN MODE: {self.algorithm_mode}")
 
-        self.declare_parameter('seconds_per_step', 5)
+        self.declare_parameter('seconds_per_step', 1)
         self.seconds_per_step = self.get_parameter('seconds_per_step').get_parameter_value().integer_value
         self.get_logger().info(f"--- with seconds per step t := {self.seconds_per_step}")
 
@@ -186,8 +186,8 @@ class AICNode(Node):
         try:
             best_action_name = self.controller.decide_action()
             if best_action_name:
-                self.get_logger().info(f"Selected Action: {best_action_name}")
                 self.apply_action(best_action_name)
+
         except Exception as e:
             self.get_logger().error(f"Control error: {e}")
 
@@ -205,6 +205,8 @@ class AICNode(Node):
             self._stop_timer.cancel()
 
         stop_time = max(0.1, self.time_delta - 0.1)
+        self.get_logger().info(f"Action '{action_name}' applied. Will stop after {stop_time:.2f} seconds. Action set: {self.actions_dict[action_name]}")
+        
         self._stop_timer = Timer(stop_time, self.stop_motion)
         self._stop_timer.start()
 
