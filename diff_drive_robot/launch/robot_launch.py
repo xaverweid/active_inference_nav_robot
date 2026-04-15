@@ -14,7 +14,6 @@ def generate_launch_description():
     yaw_pose = LaunchConfiguration('yaw_pose', default='0.0')
     # Package directory
     pkg_dir = get_package_share_directory('diff_drive_robot') # Make sure this is the correct package name
-
     # Set GZ_SIM_RESOURCE_PATH for Gazebo Harmonic to find models, adapt in case your ´models´ are stored somewhere else
     models_path = os.path.join(pkg_dir, 'models')
 
@@ -154,7 +153,7 @@ def generate_launch_description():
         declare_world,
 
         # Launch the nodes
-        # rviz2,
+        rviz2,
         rsp,
         gazebo_server,
         # disable GUI for run_experiment experimental run script
