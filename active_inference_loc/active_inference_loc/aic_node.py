@@ -173,11 +173,7 @@ class AICNode(Node):
         # Extract x, y position
         self.gt_pose_xy = np.array([pos.x, pos.y])
         self.gt_rotation = yaw
-        self.get_logger().info(
-            f"Ground truth pose updated: pose: {self.gt_pose_xy} "
-            f"and rot: {self.gt_rotation} with Controller"
-        )
-
+    
         self.controller.gt_pose_xy = self.gt_pose_xy
         self.controller.gt_rotation = self.gt_rotation
 
