@@ -239,7 +239,7 @@ class AICNode(Node):
         if self.amcl_trigger_client.service_is_ready():
             self.amcl_trigger_client.call_async(Empty.Request())
             self.waiting_for_update = True
-            self.get_logger().info("[STOP] Robot stopped. Forced AMCL update requested.")
+            #self.get_logger().info("Forced AMCL update requested.")
         else:
             self.get_logger().warn("AMCL service down. Skipping forced update.")
             self.ready_to_think = True
