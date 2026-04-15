@@ -76,15 +76,20 @@ class ActiveInferenceController:
         self.laser_angles = np.linspace(min_angle, max_angle, self.num_beams)
         self.laser_std_dev = 0.025
 
-        # --- GROUND TRUTH FOR LOGGING (set by AICNode) ---
+        # --- odometry FOR LOGGING (set by AICNode) ---
         # These are strictly for logging/analysis, NOT for decision-making
-        self.ground_truth_pose = None   # [x, y, yaw] from ground truth (for reference only)
+        self.odom_pose = None   # [x, y, yaw] from odometry (for reference only)
         self.starting_pose = None   # [x, y, yaw] initial spawn position
-        self.actual_real_position = None # gt + starting pose (x,y)
-        self.actual_real_yaw = None # (z)
+        self.odometry_position = None # odom_pose + starting pose (x,y)
+        self.odometry_rotation = None # (z)
         self.estimated_position = None  # Estimated position (x, y) from belief state (for logging and error calculation)
-        self.position_error = None  # Now: distance from spawn to AMCL estimate
-        self.rotational_error = None   # Absolute yaw error between estimated and actual real yaw (which is spawn_yaw + ground_truth_yaw)
+       
+        #Gazebo positions for actual collision avoidance and termination conditions and positional and rotational error calculations --- IGNORE ---
+        self.gt_pose_xy = None # direct gazebo reading (x,y)
+        self.gt_rotation = None # direct gazebo reading (z)
+        self.position_error = None  # gt pose vs AMCL estimate
+        self.rotational_error = None   # gt yaw vs AMCL estimate
+
         
         # --- METRICS FOR EXPERIMENT LOGGING ---
         self.chosen_action = None
@@ -194,24 +199,24 @@ class ActiveInferenceController:
         
         # **Compute position error: distance from actual real position to AMCL estimate**
         # Actual real position = spawn_pose + true_position (offset from spawn)
-        if self.starting_pose is not None and self.ground_truth_pose is not None:
+        if self.starting_pose is not None and self.odom_pose is not None:
             # Rotate ground_truth position by starting yaw to map frame
             cos_yaw = np.cos(self.starting_pose[2])
             sin_yaw = np.sin(self.starting_pose[2])
             
             # Apply 2D rotation matrix
-            rotated_x = self.ground_truth_pose[0] * cos_yaw - self.ground_truth_pose[1] * sin_yaw
-            rotated_y = self.ground_truth_pose[0] * sin_yaw + self.ground_truth_pose[1] * cos_yaw
+            rotated_x = self.odom_pose[0] * cos_yaw - self.odom_pose[1] * sin_yaw
+            rotated_y = self.odom_pose[0] * sin_yaw + self.odom_pose[1] * cos_yaw
     
             # Now add to starting position
             actual_real_position = self.starting_pose[:2] + np.array([rotated_x, rotated_y])
-            self.actual_real_position = actual_real_position
+            self.odometry_position = actual_real_position
           
             # Yaw is additive (angles add)
-            actual_real_yaw = self.starting_pose[2] + self.ground_truth_pose[2]
+            actual_real_yaw = self.starting_pose[2] + self.odom_pose[2]
             actual_real_yaw = (actual_real_yaw + np.pi) % (2 * np.pi) - np.pi # Standard wrap
-            self.actual_real_yaw = actual_real_yaw
-            # self.get_logger().info(f"Starting Pose: {self.starting_pose[:3]}, New Ground Truth Pose: {self.ground_truth_pose[:3]}")
+            self.odometry_rotation = actual_real_yaw
+            # self.get_logger().info(f"Starting Pose: {self.starting_pose[:3]}, New odometry Pose: {self.odom_pose[:3]}")
             # self.get_logger().info(f"New Actual Real Position: {actual_real_position} and yaw {actual_real_yaw:.2f}")
             
             # Calculate errors
@@ -220,13 +225,13 @@ class ActiveInferenceController:
             self.rotational_error = rotational_error
             
             # Logging
-            # self.get_logger().info(f"Starting Position: {self.starting_pose[:2]}, Ground Truth Position: {self.ground_truth_pose[:2]}, Actual Real Position: {actual_real_position}")
+            # self.get_logger().info(f"Starting Position: {self.starting_pose[:2]}, odometry Position: {self.odom_pose[:2]}, Actual Real Position: {actual_real_position}")
             # self.get_logger().info(f"Estimated Position: {self.estimated_position}, Actual Real Position: {actual_real_position}, Positional Error: {self.position_error:.2f}")
-            # self.get_logger().info(f"Starting Yaw: {self.starting_pose[2]:.2f}, Ground Truth Yaw: {self.ground_truth_pose[2]:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}")
+            # self.get_logger().info(f"Starting Yaw: {self.starting_pose[2]:.2f}, odometry Yaw: {self.odom_pose[2]:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}")
             # self.get_logger().info(f"Estimated Yaw (raw): {self.estimated_rotation:.2f}, Rotational Error: {self.rotational_error:.2f}")
             
         else:
-            self.get_logger().warn("Controller Error: Starting Pose or Ground Truth Pose not available")
+            self.get_logger().warn("Controller Error: Starting Pose or odometry Pose not available")
         
         if self.particle_data_pub is not None:
             self._publish_filtered_data()
@@ -285,7 +290,7 @@ class ActiveInferenceController:
         
         # Bimodality Analysis - for analysis of behavior in 2 hypotheses scenario (only works for GMM)
         self.bimodal_score, self.is_bimodal = calculate_bimodality_position(gmm_poses, gmm_weights)
-        # self.get_logger().info(f"Check collision on Current position: {self.actual_real_position} with rotation {self.actual_real_yaw:.2f}")
+        # self.get_logger().info(f"Check collision on Current position: {self.gt_pose_xy} with rotation {self.gt_rotation:.2f}")
         termination_action = self.check_termination_conditions(gmm_poses, gmm_weights)
         if termination_action:
             return termination_action
@@ -532,10 +537,10 @@ class ActiveInferenceController:
         
         # --- PHASE 2.1: COLLISION AVOIDANCE
         # Check if we have the actual position available
-        if self.actual_real_position is not None and self.actual_real_yaw is not None:
+        if self.gt_pose_xy is not None and self.gt_rotation is not None:
             current_pose_4d = np.array([
-                self.actual_real_position[0], self.actual_real_position[1],
-                np.cos(self.actual_real_yaw), np.sin(self.actual_real_yaw)
+                self.gt_pose_xy[0], self.gt_pose_xy[1],
+                np.cos(self.gt_rotation), np.sin(self.gt_rotation)
                 ])
 
             # HARD CONSTRAINT: Filter collision-causing actions
@@ -613,10 +618,10 @@ class ActiveInferenceController:
         available_actions = list(self.actions_dict.keys())
         
         # --- PHASE 2.1: COLLISION AVOIDANCE        
-        if self.actual_real_position is not None and self.actual_real_yaw is not None:
+        if self.gt_pose_xy is not None and self.gt_rotation is not None:
             current_pose_4d = np.array([
-                self.actual_real_position[0], self.actual_real_position[1],
-                np.cos(self.actual_real_yaw), np.sin(self.actual_real_yaw)
+                self.gt_pose_xy[0], self.gt_pose_xy[1],
+                np.cos(self.gt_rotation), np.sin(self.gt_rotation)
                 ])
 
             # HARD CONSTRAINT: Filter collision-causing actions
@@ -832,12 +837,12 @@ class ActiveInferenceController:
             return "WAIT"
 
         # Check 2: Crash 
-        # self.get_logger().info(f"Checking collision at actual position: {self.actual_real_position} with yaw {self.actual_real_yaw}")
-        if is_pose_in_collision(self.actual_real_position, self.map_metadata, self.dist_map):
+        # self.get_logger().info(f"Checking collision at actual position: {self.gt_pose_xy} with yaw {self.gt_rotation}")
+        if is_pose_in_collision(self.gt_pose_xy, self.map_metadata, self.dist_map):
             self.publish_metrics("WAIT", {}, {'epistemic': 0.0, 'pragmatic': 0.0},
                              gmm_poses, gmm_weights)  # logs final position
             self.runtime_counter+=1 
-            self.get_logger().info(f"!!! COLLISION at {self.actual_real_position}")
+            self.get_logger().info(f"!!! COLLISION at {self.gt_pose_xy}")
             #DEBUG pixel conversion
             # At collision time, log both:
             self.get_logger().info("Debugging pixel conversion at collision point:")
@@ -845,7 +850,7 @@ class ActiveInferenceController:
             data_2d = self.map_metadata['data']  # shape (height, width), values 0/100/-1
 
             self.get_logger().info(f"data2d[3][3]: {data_2d[3][3]} (just to check indexing)")
-            world_x, world_y = self.actual_real_position
+            world_x, world_y = self.gt_pose_xy
             origin_x = self.map_metadata['origin_x']
             origin_y = self.map_metadata['origin_y']
             resolution = self.map_metadata['resolution']
@@ -947,9 +952,9 @@ class ActiveInferenceController:
             float(self.shannon_entropy) if self.shannon_entropy is not None else -1.0, #9
             float(self.spatial_entropy) if self.spatial_entropy is not None else -1.0, #10
             action_float, #11
-            float(self.actual_real_position[0]), #12
-            float(self.actual_real_position[1]), #13
-            float(self.actual_real_yaw), #14
+            float(self.odometry_position[0]), #12
+            float(self.odometry_position[1]), #13
+            float(self.odometry_rotation), #14
             float(x_weighted_mean_efe_particles), #15
             float(y_weighted_mean_efe_particles), #16
             float(yaw_weighted_mean_efe_particles), #17
@@ -970,6 +975,9 @@ class ActiveInferenceController:
             float(self.spatial_entropy_res), #32
             float(self.is_wait_streak_reset),  #33
             float(len(self.current_particles)) if self.current_particles is not None else -1.0, #34
+            float(self.gt_pose_xy[0]) if self.gt_pose_xy is not None else -1.0, #35
+            float(self.gt_pose_xy[1]) if self.gt_pose_xy is not None else -1.0, #36
+            float(self.gt_rotation) if self.gt_rotation is not None else -1.0, #37
         ]
 
         self.metrics_pub.publish(metrics_msg)

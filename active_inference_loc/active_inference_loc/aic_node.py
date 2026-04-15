@@ -1,7 +1,8 @@
+from geometry_msgs import msg
 import rclpy
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist, Point
+from geometry_msgs.msg import Twist, Point, PoseStamped
 from nav_msgs.msg import Odometry, OccupancyGrid
 from std_msgs.msg import Float32MultiArray, String
 from nav2_msgs.msg import ParticleCloud
@@ -69,9 +70,11 @@ class AICNode(Node):
         self.controller.set_status_publisher(self.status_pub)
         
         # Positional tracking
-        self.ground_truth_pose = None   #x, y, yaw from ground truth (for logging only)
+        self.odom_pose = None   #x, y, yaw from gazebo odom (for logging only)
         self.starting_pose = None       #x, y, yaw initial spawn position
         self.starting_pose_received = False 
+        self.gt_pose_xy = None  #x, y from /robot/ground_truth_pose (for metrics only)
+        self.gt_rotation = None  #yaw from /robot/ground_truth_pose (for metrics only)
         
         # Subscribers
         map_qos = QoSProfile(
@@ -88,20 +91,27 @@ class AICNode(Node):
             QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.VOLATILE, depth=1)
         )
         
-        # Subscribe to ground truth for metrics
-        self.gt_sub = self.create_subscription(
-            Odometry,
-            '/ground_truth/pose',
-            self.ground_truth_callback,
-            10
-        )
-
         # Get starting pose (published by starting_pose_publisher in robot_launch.py)
         self.starting_pose_sub = self.create_subscription(
             Point,'starting_pose', self.starting_pose_callback,
             QoSProfile(reliability= ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL, depth=1)
         )
-                
+        
+        # Subscribe to ground truth for metrics
+        self.gz_odom_sub = self.create_subscription(
+            Odometry,
+            '/gazebo/odometry',
+            self.odom_callback,
+            10
+        )
+
+        self.gt_pose_sub = self.create_subscription(
+            PoseStamped,
+            '/robot/ground_truth_pose',
+            self.gt_pose_callback,
+            10
+        )
+        
         # Control Loop
         self.timer = self.create_timer(self.time_delta, self.control_loop)
         
@@ -136,25 +146,41 @@ class AICNode(Node):
             self.waiting_for_update = False
             self.ready_to_think = True
 
-    def ground_truth_callback(self, msg):
-        pos = msg.pose.pose.position
-        orient = msg.pose.pose.orientation
-
-        quaternion = [orient.x, orient.y, orient.z, orient.w]
-        roll, pitch, yaw = euler_from_quaternion(quaternion)
-        # Extract x, y position
-        self.ground_truth_pose = np.array([pos.x, pos.y, yaw])
-                
-        # **NEW: Pass to controller for logging**
-        self.controller.ground_truth_pose = self.ground_truth_pose
-    
     def starting_pose_callback(self, msg):
         if not self.starting_pose_received:
             self.starting_pose = np.array([msg.x, msg.y, msg.z])
             self.starting_pose_received = True
             self.controller.starting_pose = self.starting_pose
             self.destroy_subscription(self.starting_pose_sub)
-            
+    
+    def odom_callback(self, msg):
+        pos = msg.pose.pose.position
+        orient = msg.pose.pose.orientation
+
+        quaternion = [orient.x, orient.y, orient.z, orient.w]
+        roll, pitch, yaw = euler_from_quaternion(quaternion)
+        # Extract x, y position
+        self.odom_pose = np.array([pos.x, pos.y, yaw])
+                
+        self.controller.odom_pose = self.odom_pose
+
+    def gt_pose_callback(self, msg: PoseStamped):
+        pos = msg.pose.position
+        orient = msg.pose.orientation
+
+        quaternion = [orient.x, orient.y, orient.z, orient.w]
+        roll, pitch, yaw = euler_from_quaternion(quaternion)
+        # Extract x, y position
+        self.gt_pose_xy = np.array([pos.x, pos.y])
+        self.gt_rotation = yaw
+        self.get_logger().info(
+            f"Ground truth pose updated: pose: {self.gt_pose_xy} "
+            f"and rot: {self.gt_rotation} with Controller"
+        )
+
+        self.controller.gt_pose_xy = self.gt_pose_xy
+        self.controller.gt_rotation = self.gt_rotation
+
     def control_loop(self):
         """Main decision loop."""
         if self.ticks_passed < self.ticks_to_wait:

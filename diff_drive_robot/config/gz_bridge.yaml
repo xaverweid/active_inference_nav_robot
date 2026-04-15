@@ -68,9 +68,16 @@
 #   gz_type_name: "gz.msgs.CameraInfo"
 #   direction: GZ_TO_ROS
 
-# Gazebo Ground Truth (Absolute World Pose)
-- ros_topic_name: "ground_truth/pose"
+# Gazebo Odometry (Not Absolute World Pose)
+- ros_topic_name: "gazebo/odometry"
   gz_topic_name: "/model/diff_bot/odometry"
   ros_type_name: "nav_msgs/msg/Odometry"
   gz_type_name: "gz.msgs.Odometry"
+  direction: GZ_TO_ROS
+
+# Gazebo Ground Truth (Absolute World Pose) 
+- ros_topic_name: /robot/ground_truth_pose
+  gz_topic_name: /model/diff_bot/pose
+  ros_type_name: geometry_msgs/msg/PoseStamped
+  gz_type_name: gz.msgs.Pose
   direction: GZ_TO_ROS

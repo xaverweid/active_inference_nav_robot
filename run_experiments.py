@@ -38,7 +38,10 @@ class ExperimentLogger(Node):
         'peak2_x', 'peak2_y', 'peak2_yaw',
         'peak_distance',
         'is_wait_streak_reset',
-        'num_particles'
+        'num_particles',
+        'gazebo_position_belief_x',
+        'gazebo_position_belief_y',
+        'gazebo_rotation_belief',
         ])
 
         self.metrics = None
@@ -93,7 +96,9 @@ class ExperimentLogger(Node):
                 self.metrics[28] if len(self.metrics) > 28 else -1.0,  # peak_distance
                 self.metrics[33] if len(self.metrics) > 33 else -1.0,  # is_wait_streak_reset
                 self.metrics[34] if len(self.metrics) > 34 else -1.0,  # num_particles
-
+                self.metrics[35] if len(self.metrics) > 35 else -1.0, # gazebo_position_belief x
+                self.metrics[36] if len(self.metrics) > 36 else -1.0, # gazebo_position_belief y
+                self.metrics[37] if len(self.metrics) > 37 else -1.0, # gazebo_rotation_belief
             ])
             self.current_step += 1
             self.csv_file.flush()
