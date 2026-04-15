@@ -227,7 +227,6 @@ class AICNode(Node):
             self._stop_timer.cancel()
 
         stop_time = max(0.1, self.time_delta - 0.1)
-        self.get_logger().info(f"Action '{action_name}' applied. Will stop after {stop_time:.2f} seconds. Action set: {self.actions_dict[action_name]}")
         
         self._stop_timer = Timer(stop_time, self.stop_motion)
         self._stop_timer.start()
