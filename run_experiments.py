@@ -37,7 +37,8 @@ class ExperimentLogger(Node):
         'peak1_x', 'peak1_y', 'peak1_yaw',
         'peak2_x', 'peak2_y', 'peak2_yaw',
         'peak_distance',
-        'is_wait_streak_reset'
+        'is_wait_streak_reset',
+        'num_particles'
         ])
 
         self.metrics = None
@@ -91,6 +92,7 @@ class ExperimentLogger(Node):
                 self.metrics[27] if len(self.metrics) > 27 else -1.0,  # peak2_yaw
                 self.metrics[28] if len(self.metrics) > 28 else -1.0,  # peak_distance
                 self.metrics[33] if len(self.metrics) > 33 else -1.0,  # is_wait_streak_reset
+                self.metrics[34] if len(self.metrics) > 34 else -1.0,  # num_particles
 
             ])
             self.current_step += 1

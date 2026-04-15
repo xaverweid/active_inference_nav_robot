@@ -154,7 +154,8 @@ COLUMN_NAMES = [
     'peak1_x', 'peak1_y', 'peak1_yaw',
     'peak2_x', 'peak2_y', 'peak2_yaw',
     'peak_distance', 
-    'is_wait_streak_reset'
+    'is_wait_streak_reset',
+    'num_particles',
 ]
 
 def load_all_csvs(csv_dir):

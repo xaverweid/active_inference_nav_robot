@@ -968,7 +968,8 @@ class ActiveInferenceController:
             float(self.bimodal_score_threshold), #30
             float(self.planning_sigma),   # 31
             float(self.spatial_entropy_res), #32
-            float(self.is_wait_streak_reset)  #33
+            float(self.is_wait_streak_reset),  #33
+            float(len(self.current_particles)) if self.current_particles is not None else -1.0, #34
         ]
 
         self.metrics_pub.publish(metrics_msg)
