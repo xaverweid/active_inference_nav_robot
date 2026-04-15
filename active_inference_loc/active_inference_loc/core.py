@@ -197,8 +197,18 @@ class ActiveInferenceController:
             np.average(points[:, 2], weights=weights)  # Already cos(yaw)
         )
         
-        # **Compute position error: distance from actual real position to AMCL estimate**
-        # Actual real position = spawn_pose + true_position (offset from spawn)
+        # **Compute position error: distance from gt real position to AMCL estimate**
+        # Calculate errors
+        if self.gt_pose_xy is not None and self.gt_rotation is not None:
+            self.position_error = np.linalg.norm(self.estimated_position - self.gt_pose_xy)
+            rotational_error = abs((self.estimated_rotation - self.gt_rotation + np.pi) % (2 * np.pi) - np.pi)
+            self.rotational_error = rotational_error
+            #self.get_logger().info(f"Position: {self.gt_pose_xy} , Rotational : {self.gt_rotation:.2f} rad")
+        else:
+            self.get_logger().warn("Ground truth pose not available for position error calculation.")
+
+
+        # Previously calculated via odom_pose = spawn_pose + odom (offset from spawn), which is not used anymore for error calculation
         if self.starting_pose is not None and self.odom_pose is not None:
             # Rotate ground_truth position by starting yaw to map frame
             cos_yaw = np.cos(self.starting_pose[2])
@@ -209,30 +219,19 @@ class ActiveInferenceController:
             rotated_y = self.odom_pose[0] * sin_yaw + self.odom_pose[1] * cos_yaw
     
             # Now add to starting position
-            actual_real_position = self.starting_pose[:2] + np.array([rotated_x, rotated_y])
-            self.odometry_position = actual_real_position
+            odom_real_position = self.starting_pose[:2] + np.array([rotated_x, rotated_y])
+            self.odometry_position = odom_real_position
           
             # Yaw is additive (angles add)
-            actual_real_yaw = self.starting_pose[2] + self.odom_pose[2]
-            actual_real_yaw = (actual_real_yaw + np.pi) % (2 * np.pi) - np.pi # Standard wrap
-            self.odometry_rotation = actual_real_yaw
+            odom_real_yaw = self.starting_pose[2] + self.odom_pose[2]
+            odom_real_yaw = (odom_real_yaw + np.pi) % (2 * np.pi) - np.pi # Standard wrap
+            self.odometry_rotation = odom_real_yaw
             # self.get_logger().info(f"Starting Pose: {self.starting_pose[:3]}, New odometry Pose: {self.odom_pose[:3]}")
-            # self.get_logger().info(f"New Actual Real Position: {actual_real_position} and yaw {actual_real_yaw:.2f}")
-            
-            # Calculate errors
-            self.position_error = np.linalg.norm(self.estimated_position - actual_real_position)
-            rotational_error = abs((self.estimated_rotation - actual_real_yaw + np.pi) % (2 * np.pi) - np.pi)            
-            self.rotational_error = rotational_error
-            
-            # Logging
-            # self.get_logger().info(f"Starting Position: {self.starting_pose[:2]}, odometry Position: {self.odom_pose[:2]}, Actual Real Position: {actual_real_position}")
-            # self.get_logger().info(f"Estimated Position: {self.estimated_position}, Actual Real Position: {actual_real_position}, Positional Error: {self.position_error:.2f}")
-            # self.get_logger().info(f"Starting Yaw: {self.starting_pose[2]:.2f}, odometry Yaw: {self.odom_pose[2]:.2f}, Actual Real Yaw: {actual_real_yaw:.2f}")
-            # self.get_logger().info(f"Estimated Yaw (raw): {self.estimated_rotation:.2f}, Rotational Error: {self.rotational_error:.2f}")
-            
+            # self.get_logger().info(f"New Actual Real Position: {actual_real_position} and yaw {odom_real_yaw:.2f}")
+
         else:
             self.get_logger().warn("Controller Error: Starting Pose or odometry Pose not available")
-        
+                
         if self.particle_data_pub is not None:
             self._publish_filtered_data()
 
@@ -361,8 +360,7 @@ class ActiveInferenceController:
         # ── EFE evaluation — single step or horizon tree ─────────────
         def evaluate_efe_single(particles_ep, weights_ep, action):
             """Compute EFE for one action at one step."""
-            
-            pred_ep = predict_motion_batch(particles_ep, action, self.actions_dict, dt=self.time_delta_sim)
+            pred_ep = predict_motion_batch(particles_ep, action, self.actions_dict, dt=self.time_delta_sim)            
             raw_epistemic = self.calculate_efe_epistemic(pred_ep, weights_ep)
 
             if only_epistemic:
@@ -472,8 +470,8 @@ class ActiveInferenceController:
         pred_scans = raycast_scan_numba(
             poses_4d=np.asarray(predicted_poses, dtype=np.float64),
             dist_map=self.dist_map,res=res,ox=ox,oy=oy,
-            fov_deg=self.fov_deg, num_beams=self.num_beams, max_range=self.laser_max_range, min_range=self.laser_min_range, stddev=self.laser_std_dev)
-
+            fov_deg=self.fov_deg, num_beams=self.num_beams, max_range=self.laser_max_range, min_range=self.laser_min_range, stddev=self.laser_std_dev)        
+        
         # Sanity checks / normalization
         rep_weights = np.asarray(rep_weights, dtype=np.float64)
         if rep_weights.ndim != 1:
@@ -952,9 +950,11 @@ class ActiveInferenceController:
             float(self.shannon_entropy) if self.shannon_entropy is not None else -1.0, #9
             float(self.spatial_entropy) if self.spatial_entropy is not None else -1.0, #10
             action_float, #11
-            float(self.odometry_position[0]), #12
-            float(self.odometry_position[1]), #13
-            float(self.odometry_rotation), #14
+
+            float(self.gt_pose_xy[0]) if self.gt_pose_xy is not None else -1.0, #12
+            float(self.gt_pose_xy[1]) if self.gt_pose_xy is not None else -1.0, #13
+            float(self.gt_rotation) if self.gt_rotation is not None else -1.0, #14
+
             float(x_weighted_mean_efe_particles), #15
             float(y_weighted_mean_efe_particles), #16
             float(yaw_weighted_mean_efe_particles), #17
@@ -975,9 +975,10 @@ class ActiveInferenceController:
             float(self.spatial_entropy_res), #32
             float(self.is_wait_streak_reset),  #33
             float(len(self.current_particles)) if self.current_particles is not None else -1.0, #34
-            float(self.gt_pose_xy[0]) if self.gt_pose_xy is not None else -1.0, #35
-            float(self.gt_pose_xy[1]) if self.gt_pose_xy is not None else -1.0, #36
-            float(self.gt_rotation) if self.gt_rotation is not None else -1.0, #37
+
+            float(self.odometry_position[0]), #35
+            float(self.odometry_position[1]), #36
+            float(self.odometry_rotation), #37
         ]
 
         self.metrics_pub.publish(metrics_msg)
@@ -986,4 +987,7 @@ class ActiveInferenceController:
         self.get_logger().info(
             f"Step {self.runtime_counter} | Action: {best_action} | "
             f"Entropy: {self.shannon_entropy:.2f} | Conv: {self.convergence_parameter:.2f} | Bimodality: {self.bimodal_score:.2f}"
+        )
+        self.get_logger().info(
+            f"GMM poses: {gmm_poses} | weights: {gmm_weights}"
         )

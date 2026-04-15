@@ -24,9 +24,9 @@ class ExperimentLogger(Node):
         self.csv_file = open(f"{trial_name}.csv", mode='w')
         self.writer = csv.writer(self.csv_file)
         self.writer.writerow(['step', 'position_error', 'rotational_error', 'shannon_entropy', 'spatial_entropy','convergence_gmm', 'epistemic', 'pragmatic', 'selected_action',
-        'actual real x',
-        'actual real y',
-        'actual real yaw',
+        'gt_pose_x',
+        'gt_pose_y',
+        'gt_pose_yaw',
         'x weighted mean cluster ',
         'y weighted mean cluster ',
         'yaw weighted mean cluster',
@@ -39,9 +39,9 @@ class ExperimentLogger(Node):
         'peak_distance',
         'is_wait_streak_reset',
         'num_particles',
-        'gazebo_position_belief_x',
-        'gazebo_position_belief_y',
-        'gazebo_rotation_belief',
+        'odom_pose_x',
+        'odom_pose_y',
+        'odom_pose_yaw',
         ])
 
         self.metrics = None
@@ -77,9 +77,9 @@ class ExperimentLogger(Node):
                 self.metrics[0] if len(self.metrics) > 0 else -1.0,  # epistemic
                 self.metrics[1] if len(self.metrics) > 1 else -1.0,  # pragmatic
                 self.metrics[11] if len(self.metrics) > 11 else -1.0,  # selected action
-                self.metrics[12] if len(self.metrics) > 12 else -1.0,  # actual real x
-                self.metrics[13] if len(self.metrics) > 13 else -1.0,  # actual real y
-                self.metrics[14] if len(self.metrics) > 14 else -1.0,  # actual real yaw
+                self.metrics[12] if len(self.metrics) > 12 else -1.0,  # gt pose x
+                self.metrics[13] if len(self.metrics) > 13 else -1.0,  # gt pose y
+                self.metrics[14] if len(self.metrics) > 14 else -1.0,  # gt pose yaw
                 self.metrics[15] if len(self.metrics) > 15 else -1.0,  # x weighted mean cluster 
                 self.metrics[16] if len(self.metrics) > 16 else -1.0,  # y weighted mean cluster 
                 self.metrics[17] if len(self.metrics) > 17 else -1.0,  # yaw weighted mean cluster
@@ -96,9 +96,10 @@ class ExperimentLogger(Node):
                 self.metrics[28] if len(self.metrics) > 28 else -1.0,  # peak_distance
                 self.metrics[33] if len(self.metrics) > 33 else -1.0,  # is_wait_streak_reset
                 self.metrics[34] if len(self.metrics) > 34 else -1.0,  # num_particles
-                self.metrics[35] if len(self.metrics) > 35 else -1.0, # gazebo_position_belief x
-                self.metrics[36] if len(self.metrics) > 36 else -1.0, # gazebo_position_belief y
-                self.metrics[37] if len(self.metrics) > 37 else -1.0, # gazebo_rotation_belief
+                self.metrics[35] if len(self.metrics) > 35 else -1.0, # odom pose x
+                self.metrics[36] if len(self.metrics) > 36 else -1.0, # odom pose y
+                self.metrics[37] if len(self.metrics) > 37 else -1.0, # odom pose yaw
+
             ])
             self.current_step += 1
             self.csv_file.flush()
@@ -197,13 +198,13 @@ def run_benchmarking():
     poses_file_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
-        'starting_poses_1000_h_map.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv]
+        'starting_poses_1000_my_map.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv, starting_poses_1000_h_map_large.csv]
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["entropy_min"]  
-    seconds_per_step = ['1', '5'] #, '1', '5'
-    map_name= 'h_map' # 'h_map', 'my_map'
+    algos = ["active_inf_5", "active_inf_500", "active_inf_5_h3", "entropy_min", "random_walk", "d_opt_particle"] # ["active_inf_5", "active_inf_500", "active_inf_5_h3", "entropy_min", "random_walk", "d_opt_particle"]
+    seconds_per_step = ['1'] #, '1', '5'
+    map_name= 'my_map' # 'h_map', 'my_map'
 
     data_root = os.path.join(os.getcwd(), "src", "data")
 
@@ -219,7 +220,7 @@ def run_benchmarking():
                                     'convergence_threshold', 'bimodal_score_threshold',
                                     'planning_sigma', 'spatial_entropy_res'])
 
-            for i, p in enumerate(poses[0:200], start=0):
+            for i, p in enumerate(poses[0:40], start=0):
 
                 # Hard reset every 100 runs: sleep longer to let system breathe
                 if i > 0 and i % 100 == 0:

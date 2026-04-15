@@ -169,6 +169,7 @@ class BeliefMonitorNode(Node):
                 f"Total Expected G:   {metrics[2]:.2f}\n"
                 f"-------------------------------\n"
                 f"Runtime:            {int(metrics[5]):.2f}\n"
+                f"N Particles:        {int(metrics[34]) if len(metrics) > 34 else 'N/A'}\n"
                 f"Position Error:     {pos_error}\n"
                 f"Rotational Error:   {rot_error}\n"
                 f"Selected Action:    {action}\n"

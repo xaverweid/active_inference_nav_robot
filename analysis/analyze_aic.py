@@ -147,7 +147,7 @@ ROT_ERROR_THRESHOLD = 0.5   # radians
 COLUMN_NAMES = [
     'step', 'position_error', 'rotational_error', 'shannon_entropy', 'spatial_entropy',
     'convergence_gmm', 'epistemic', 'pragmatic', 'selected_action',
-    'gt_position_belief_x', 'gt_position_belief_y', 'gt_rotation_belief',
+    'gt_pose_x', 'gt_pose_y', 'gt_pose_yaw',
     'x_weighted_mean_cluster', 'y_weighted_mean_cluster', 'yaw_weighted_mean_cluster',
     'std_x_weighted', 'std_y_weighted',
     'bimodal_score', 'is_bimodal',
@@ -156,9 +156,9 @@ COLUMN_NAMES = [
     'peak_distance', 
     'is_wait_streak_reset',
     'num_particles',
-    'gazebo_position_belief_x',
-    'gazebo_position_belief_y',
-    'gazebo_rotation_belief',
+    'odom_pose_x',
+    'odom_pose_y',
+    'odom_pose_yaw',
 ]
 
 def load_all_csvs(csv_dir):
@@ -238,7 +238,7 @@ def prepare_df(df):
     )
     df['dx'] = [v[0] for v in vecs]
     df['dy'] = [v[1] for v in vecs]
-    df = df.dropna(subset=['gazebo_position_belief_x', 'gazebo_position_belief_y', 'yaw_weighted_mean_cluster'])
+    df = df.dropna(subset=['gt_pose_x', 'gt_pose_y', 'yaw_weighted_mean_cluster'])
     return df
 
 # ─────────────────────────────────────────────
@@ -257,8 +257,8 @@ def get_ranges(map_img, df):
     if map_img is not None:
         e = get_map_extent(map_img)
         return [e[0], e[1]], [e[2], e[3]]
-    return ([df['gazebo_position_belief_x'].min(), df['gazebo_position_belief_x'].max()],
-            [df['gazebo_position_belief_y'].min(), df['gazebo_position_belief_y'].max()])
+    return ([df['gt_pose_x'].min(), df['gt_pose_x'].max()],
+            [df['gt_pose_y'].min(), df['gt_pose_y'].max()])
 
 def setup_axis(ax, map_img):
     if map_img is not None:
@@ -294,24 +294,24 @@ def draw_heatmap(ax, h, x_range, y_range, label):
 # ─────────────────────────────────────────────
 
 def plot_starting_positions(df, map_img):
-    starts = df[df['step'] == 0][['gazebo_position_belief_x', 'gazebo_position_belief_y', 'gazebo_position_belief_yaw', 'run_id']].copy()
+    starts = df[df['step'] == 0][['gt_pose_x', 'gt_pose_y', 'gt_pose_yaw', 'run_id']].copy()
 
     fig, ax = plt.subplots(figsize=(10, 9))
     setup_axis(ax, map_img)
 
     # Dot at each start position
     ax.scatter(
-        starts['gazebo_position_belief_x'], starts['gazebo_position_belief_y'],
+        starts['gt_pose_x'], starts['gt_pose_y'],
         c='red', s=20, alpha=0.6, zorder=3, label=f'Start positions (n={len(starts)})'
     )
 
     # Arrow showing initial yaw direction
     arrow_len = 0.2  # metres — adjust if arrows are too long/short
     ax.quiver(
-        starts['gazebo_position_belief_x'],
-        starts['gazebo_position_belief_y'],
-        arrow_len * np.cos(starts['gazebo_position_belief_yaw']),
-        arrow_len * np.sin(starts['gazebo_position_belief_yaw']),
+        starts['gt_pose_x'],
+        starts['gt_pose_y'],
+        arrow_len * np.cos(starts['gt_pose_yaw']),
+        arrow_len * np.sin(starts['gt_pose_yaw']),
         color='red', alpha=0.5,
         scale=1, scale_units='xy',
         width=0.003, headwidth=4,
@@ -337,7 +337,7 @@ def plot_position_heatmap(df, map_img):
     fig.suptitle('Visited Pose Heatmap — Where Does the Robot Go?',
                  fontsize=14, fontweight='bold')
     setup_axis(ax, map_img)
-    h = build_heatmap(df['gazebo_position_belief_x'], df['gazebo_position_belief_y'], x_range, y_range)
+    h = build_heatmap(df['gt_pose_x'], df['gt_pose_y'], x_range, y_range)
     draw_heatmap(ax, h, x_range, y_range, 'Visit density')
     ax.set_title(f'All Steps\n({len(df):,} steps, {df["run_id"].nunique()} runs)')
     plt.tight_layout()
@@ -353,8 +353,8 @@ def plot_gaze_heatmap(df, map_img):
     fig.suptitle('Gaze Heatmap — Where Does the Algorithm Want to Move?',
                  fontsize=14, fontweight='bold')
     setup_axis(ax, map_img)
-    h = build_heatmap(trans['gazebo_position_belief_x'] + trans['dx'],
-                      trans['gazebo_position_belief_y'] + trans['dy'],
+    h = build_heatmap(trans['gt_pose_x'] + trans['dx'],
+                      trans['gt_pose_y'] + trans['dy'],
                       x_range, y_range)
     draw_heatmap(ax, h, x_range, y_range, 'Gaze density')
     ax.set_title(f'All Steps\n({len(trans):,} steps)')
@@ -370,8 +370,8 @@ def plot_quiver_overlay(df, map_img):
     fig.suptitle('Mean Intended Direction per Map Cell',
                  fontsize=14, fontweight='bold')
     setup_axis(ax, map_img)
-    trans['cell_x'] = np.floor(trans['gazebo_position_belief_x'] / QUIVER_GRID_M) * QUIVER_GRID_M
-    trans['cell_y'] = np.floor(trans['gazebo_position_belief_y'] / QUIVER_GRID_M) * QUIVER_GRID_M
+    trans['cell_x'] = np.floor(trans['gt_pose_x'] / QUIVER_GRID_M) * QUIVER_GRID_M
+    trans['cell_y'] = np.floor(trans['gt_pose_y'] / QUIVER_GRID_M) * QUIVER_GRID_M
     g = trans.groupby(['cell_x', 'cell_y'])[['dx', 'dy']].mean().reset_index()
     mag = np.sqrt(g['dx']**2 + g['dy']**2).replace(0, np.nan)
     u = g['dx'] / mag * QUIVER_GRID_M * 0.6
@@ -471,8 +471,8 @@ def save_collision_report(csv_dir, output_dir):
                     print(f"  Could not load run p{pose_idx}: {e}")
                     continue
 
-                traj_x = run_df['gazebo_position_belief_x'].values
-                traj_y = run_df['gazebo_position_belief_y'].values
+                traj_x = run_df['gt_pose_x'].values
+                traj_y = run_df['gt_pose_y'].values
 
                 if len(traj_x) == 0:
                     continue
@@ -531,8 +531,8 @@ def save_collision_report(csv_dir, output_dir):
         try:
             run_df = pd.read_csv(run_files[0], skiprows=1, names=COLUMN_NAMES)
             run_df = pd.to_numeric(run_df.stack(), errors='coerce').unstack()
-            valid_x.extend(run_df['gazebo_position_belief_x'].dropna().tolist())
-            valid_y.extend(run_df['gazebo_position_belief_y'].dropna().tolist())
+            valid_x.extend(run_df['gt_pose_x'].dropna().tolist())
+            valid_y.extend(run_df['gt_pose_y'].dropna().tolist())
         except Exception:
             continue
 
@@ -602,8 +602,8 @@ def save_collision_report(csv_dir, output_dir):
             try:
                 run_df = pd.read_csv(run_files[0], skiprows=1, names=COLUMN_NAMES)
                 run_df = pd.to_numeric(run_df.stack(), errors='coerce').unstack()
-                mid_run_end_x.append(run_df['gazebo_position_belief_x'].values[-1])
-                mid_run_end_y.append(run_df['gazebo_position_belief_y'].values[-1])
+                mid_run_end_x.append(run_df['gt_pose_x'].values[-1])
+                mid_run_end_y.append(run_df['gt_pose_y'].values[-1])
             except Exception:
                 continue
 
@@ -634,8 +634,8 @@ def save_collision_report(csv_dir, output_dir):
 def plot_bimodal_heatmap(df, map_img):
     """
     Heatmap of where bimodal belief occurs across all runs.
-    Uses actual robot position (gazebo_position_belief_x/y) at steps where
-    is_bimodal = 1.0
+    Uses actual robot position (gt_pose_x/y) at steps where
+    is_bimodal = 1.0gi
     """
     bimodal_steps = df[df['is_bimodal'] == 1.0]    
     all_steps     = df
@@ -649,7 +649,7 @@ def plot_bimodal_heatmap(df, map_img):
     # Left: all visited positions as reference
     ax = axes[0]
     setup_axis(ax, map_img)
-    h = build_heatmap(all_steps['gazebo_position_belief_x'], all_steps['gazebo_position_belief_y'],
+    h = build_heatmap(all_steps['gt_pose_x'], all_steps['gt_pose_y'],
                       x_range, y_range)
     draw_heatmap(ax, h, x_range, y_range, 'Visit density')
     ax.set_title(f'All Visited Positions\n({len(all_steps):,} steps)')
@@ -660,7 +660,7 @@ def plot_bimodal_heatmap(df, map_img):
     if len(bimodal_steps) == 0:
         ax.set_title('No bimodal steps found\n(check is_bimodal)')
     else:
-        h = build_heatmap(bimodal_steps['gazebo_position_belief_x'], bimodal_steps['gazebo_position_belief_y'],
+        h = build_heatmap(bimodal_steps['gt_pose_x'], bimodal_steps['gt_pose_y'],
                           x_range, y_range)
         draw_heatmap(ax, h, x_range, y_range, 'Bimodal event density')
         pct = 100 * len(bimodal_steps) / len(all_steps)
@@ -787,8 +787,8 @@ def plot_bimodal_decision_analysis(df, map_img):
 
             # ── Which peak was the correct one? ──────────────────
             # Correct = peak closer to GT position
-            gt_x = last_bimodal['gazebo_position_belief_x']
-            gt_y = last_bimodal['gazebo_position_belief_y']
+            gt_x = last_bimodal['gt_pose_x']
+            gt_y = last_bimodal['gt_pose_y']
             dist_gt_to_p1 = np.sqrt((gt_x - last_bimodal['peak1_x'])**2 +
                                      (gt_y - last_bimodal['peak1_y'])**2)
             dist_gt_to_p2 = np.sqrt((gt_x - last_bimodal['peak2_x'])**2 +

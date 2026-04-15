@@ -11,7 +11,7 @@ def generate_launch_description():
 
     x_pose = LaunchConfiguration('x_pose', default='0.0')
     y_pose = LaunchConfiguration('y_pose', default='0.0')
-    yaw_pose = LaunchConfiguration('yaw_pose', default='0.0')
+    yaw_pose = LaunchConfiguration('yaw_pose', default='0.0') 
     # Package directory
     pkg_dir = get_package_share_directory('diff_drive_robot') # Make sure this is the correct package name
     # Set GZ_SIM_RESOURCE_PATH for Gazebo Harmonic to find models, adapt in case your ´models´ are stored somewhere else
@@ -28,8 +28,8 @@ def generate_launch_description():
 
     # Path to default world  
     # if you change world file, be sure to also change the .yaml path further down (my_map.yaml, h_map_world.yaml OR h_map_world_large.yaml)
-    # Configuration
-    world_path = os.path.join(pkg_dir,'worlds', 'h_map_world_large.sdf') #[world.sdf, h_map_world.sdf, h_map_world_large.sdf]
+    # PARAMETERS
+    world_path = os.path.join(pkg_dir,'worlds', 'world.sdf') #[world.sdf, h_map_world.sdf, h_map_world_large.sdf]
 
     # Launch Arguments
     declare_world = DeclareLaunchArgument(
@@ -106,8 +106,8 @@ def generate_launch_description():
     )
 
     # Ensure this path is correct for the SLAM generated map (see mapping_launch.py if you need to create one)
-    # Configuration
-    map_file = os.path.join(pkg_dir, 'maps', 'h_map_large.yaml')  #[h_map.yaml, h_map_large.yaml, my_map.yaml]
+    # PARAMETERS
+    map_file = os.path.join(pkg_dir, 'maps', 'my_map.yaml')  #[h_map.yaml, h_map_large.yaml, my_map.yaml]
 
     amcl_params = os.path.join(pkg_dir, 'config', 'amcl.yaml')  
 
@@ -157,7 +157,7 @@ def generate_launch_description():
         rsp,
         gazebo_server,
         # disable GUI for run_experiment experimental run script
-        gazebo_client, 
+        # gazebo_client, 
         ros_gz_bridge,
         spawn_diff_bot,
         starting_pose_publisher,

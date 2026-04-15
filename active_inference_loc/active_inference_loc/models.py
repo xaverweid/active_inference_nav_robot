@@ -58,7 +58,7 @@ def predict_motion_batch(poses_4d, action_type, action_dict, dt):
 
     new_x = x + (v * dt) * np.cos(move_angle)
     new_y = y + (v * dt) * np.sin(move_angle)
-
+    
     return np.column_stack([new_x, new_y, np.cos(new_theta), np.sin(new_theta)])
 
 '''
