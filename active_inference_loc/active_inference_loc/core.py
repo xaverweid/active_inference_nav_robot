@@ -988,6 +988,3 @@ class ActiveInferenceController:
             f"Step {self.runtime_counter} | Action: {best_action} | "
             f"Entropy: {self.shannon_entropy:.2f} | Conv: {self.convergence_parameter:.2f} | Bimodality: {self.bimodal_score:.2f}"
         )
-        self.get_logger().info(
-            f"GMM poses: {gmm_poses} | weights: {gmm_weights}"
-        )
