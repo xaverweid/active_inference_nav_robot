@@ -62,7 +62,7 @@ class ActiveInferenceController:
         self.success_counter = 0 # counts how many successes in localization (convergence and non bimodal) have happened, if 3 in a row the run ends with a Success
 
         # --- TUNABLE PARAMETERS ---
-        self.alpha_epistemic = 1000.0 
+        self.alpha_epistemic = 2000.0 
         self.beta_pragmatic = 200.0 
         self.risk_penalty_factor = 5.0
 
@@ -304,7 +304,7 @@ class ActiveInferenceController:
         # If n_raycast_particles is > 10, use Importance Sampling
         # else GMM with gmm_poses and gmm_weights from above
         sample_size_epistemic = min(num_total_p, n_raycast_particles)
-        if sample_size_epistemic > 10:
+        if sample_size_epistemic > 10: # n=500 path
             p_distribution = initial_weights / np.sum(initial_weights)
             sample_indices_epistemic = np.random.choice(num_total_p, sample_size_epistemic, replace=True, p=p_distribution)
             particles_epistemic = initial_particles[sample_indices_epistemic]
@@ -362,6 +362,9 @@ class ActiveInferenceController:
             """Compute EFE for one action at one step."""
             pred_ep = predict_motion_batch(particles_ep, action, self.actions_dict, dt=self.time_delta_sim)            
             raw_epistemic = self.calculate_efe_epistemic(pred_ep, weights_ep)
+            if n_raycast_particles == 500:  # n=500 path; 
+                #epistemic value: needs to be empirically corrected for aic 500, to be scaled with stable pragmatic value over different aic algos
+                raw_epistemic *= 0.01  # empirical correction, comparing 500 epistemic particles to 5 particles with GMM, divided by 100
 
             if only_epistemic:
                 raw_pragmatic = 0.0
