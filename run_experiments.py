@@ -220,10 +220,10 @@ def run_benchmarking():
                                     'convergence_threshold', 'bimodal_score_threshold',
                                     'planning_sigma', 'spatial_entropy_res'])
 
-            for i, p in enumerate(poses[0:1], start=0):
+            for i, p in enumerate(poses[0:100], start=0):
 
-                # Hard reset every 100 runs: sleep longer to let system breathe
-                if i > 0 and i % 100 == 0:
+                # Hard reset every 50 runs: sleep longer to let system breathe
+                if i > 0 and i % 50 == 0:
                     print(f"[PERIODIC RESET] Run {i} — extended cooldown...")
                     time.sleep(30)  # let OS fully settle
 
