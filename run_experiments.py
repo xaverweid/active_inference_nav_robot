@@ -191,20 +191,20 @@ def run_benchmarking():
     
     """
     PARAMETERS:
-    Make sure to have the robot_launch.py configured with the correct world file and map file that correspond to your experiment (h_map vs my_map) for both
-    .sdf and .yaml files in robot_launch.py 
+    Make sure to have the robot_launch.py configured with the correct world file and map file that correspond to your experiment (h_map vs my_map)  
+    Both .sdf and .yaml files in robot_launch.py 
 
     """
     poses_file_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
-        'starting_poses_1000_my_map.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv, starting_poses_1000_h_map_large.csv]
+        'starting_poses_1000_h_map.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv, starting_poses_1000_h_map_large.csv]
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
     algos = ["active_inf_5", "active_inf_500", "active_inf_5_h3", "entropy_min", "random_walk", "d_opt_particle"] # ["active_inf_5", "active_inf_500", "active_inf_5_h3", "entropy_min", "random_walk", "d_opt_particle"]
-    seconds_per_step = ['1'] #, '1', '5'
-    map_name= 'my_map' # 'h_map', 'my_map'
+    seconds_per_step = ['1', '5'] #, '1', '5'
+    map_name= 'h_map' # 'h_map', 'my_map', 'h_map_large'
 
     data_root = os.path.join(os.getcwd(), "src", "data")
 
@@ -220,7 +220,7 @@ def run_benchmarking():
                                     'convergence_threshold', 'bimodal_score_threshold',
                                     'planning_sigma', 'spatial_entropy_res'])
 
-            for i, p in enumerate(poses[0:40], start=0):
+            for i, p in enumerate(poses[0:1], start=0):
 
                 # Hard reset every 100 runs: sleep longer to let system breathe
                 if i > 0 and i % 100 == 0:
