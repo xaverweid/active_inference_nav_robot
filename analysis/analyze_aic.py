@@ -42,10 +42,11 @@ def load_map_metadata(map_path):
 # PATHS
 # ─────────────────────────────────────────────
 # ADAPT regarding map, seconds per step, and algorithm:
+# PARAMETERS
 ###
-map_name = "my_map" # h_map OR my_map
+map_name = "my_map" # h_map, my_map OR h_map_large
 seconds_per_step = "5" # 1 OR 5
-algorithm = "entropy_min" # active_inf_5, active_inf_5_h3, active_inf_500, d_opt_particle, random_walk
+algorithm = "random_walk" # active_inf_5, active_inf_5_h3, active_inf_500, d_opt_particle, entropy_min, random_walk
 ###
 
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
