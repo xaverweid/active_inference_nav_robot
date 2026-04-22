@@ -22,7 +22,7 @@ def generate_launch_description():
     algo_mode_arg = DeclareLaunchArgument(
         'algo_mode',
         default_value='active_inf_5',
-        description='Algorithm mode: active_inf_5, active_inf_500, active_inf_5_h3, random_walk, entropy_min, d_opt_particle'
+        description='Algorithm mode: active_inf_5, active_inf_500, active_inf_5_h3, random_walk, random_walk_no_collision_avoidance, entropy_min, d_opt_particle'
     )
 
     seconds_per_step_arg = DeclareLaunchArgument(

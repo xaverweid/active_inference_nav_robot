@@ -263,6 +263,8 @@ class ActiveInferenceController:
             return self._run_active_inference(n_raycast_particles=5, n_time_horizon=3)
         elif self.algo_mode == "random_walk":
             return self._run_random_walk()
+        elif self.algo_mode == "random_walk_no_collision_avoidance":
+            return self._run_random_walk(collision_avoidance=False)
         elif self.algo_mode == "entropy_min":
             return self._run_active_inference(n_raycast_particles=5, only_epistemic=True)
         elif self.algo_mode == "d_opt_particle":
@@ -518,7 +520,7 @@ class ActiveInferenceController:
         
         return total_risk * self.risk_penalty_factor
 
-    def _run_random_walk(self): 
+    def _run_random_walk(self, collision_avoidance=True): 
         """Random action selection."""
         start_time = time.time()
         
@@ -545,24 +547,27 @@ class ActiveInferenceController:
                 ])
 
             # HARD CONSTRAINT: Filter collision-causing actions
-            safe_actions = []
-            for action in available_actions:
-                
-                # Predict resulting pose from this action
-                action_is_safe = True
-                for checkpoint in self.collision_checkpoints:
-                    predicted_pose = predict_motion(current_pose_4d, action, self.actions_dict, dt=checkpoint)
-                    pred_xyz = [
-                        predicted_pose[0],
-                        predicted_pose[1],
-                        np.arctan2(predicted_pose[3], predicted_pose[2])
-                    ]
-                    if is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
-                        action_is_safe = False
-                        break                          
-                if action_is_safe:
-                    safe_actions.append(action)
-            # self.get_logger().info(f"Collision filter: {len(safe_actions)}/{len(available_actions)} safe")
+            if collision_avoidance:
+                safe_actions = []
+                for action in available_actions:
+                    
+                    # Predict resulting pose from this action
+                    action_is_safe = True
+                    for checkpoint in self.collision_checkpoints:
+                        predicted_pose = predict_motion(current_pose_4d, action, self.actions_dict, dt=checkpoint)
+                        pred_xyz = [
+                            predicted_pose[0],
+                            predicted_pose[1],
+                            np.arctan2(predicted_pose[3], predicted_pose[2])
+                        ]
+                        if is_pose_in_collision(pred_xyz, self.map_metadata, self.dist_map):
+                            action_is_safe = False
+                            break                          
+                    if action_is_safe:
+                        safe_actions.append(action)
+                # self.get_logger().info(f"Collision filter: {len(safe_actions)}/{len(available_actions)} safe")
+            else:
+                safe_actions = available_actions
         else:
             # Position not available yet, skip collision checking
             self.get_logger().warn("Actual position not available, using all actions")
@@ -584,8 +589,7 @@ class ActiveInferenceController:
         # --- PHASE 3: FINALIZE & PUBLISH ---
         # Prevent WAIT from being chosen more than 2 times in a row
         best_action = self.handle_wait_streak(best_action, efe_scores, safe_actions=safe_actions)
-        self.get_logger().info(f"Random Walk: {best_action}")
-
+        self.get_logger().info(f"Random Walk with Collision Avoidance: {best_action}") if collision_avoidance else self.get_logger().info(f"Random Walk NO Collision Avoidance: {best_action}")
 
         # Store for logging
         self.runtime_counter += 1

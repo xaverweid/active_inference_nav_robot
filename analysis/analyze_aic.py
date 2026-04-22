@@ -46,7 +46,7 @@ def load_map_metadata(map_path):
 ###
 map_name = "my_map" # h_map, my_map OR h_map_large
 seconds_per_step = "5" # 1 OR 5
-algorithm = "random_walk" # active_inf_5, active_inf_5_h3, active_inf_500, d_opt_particle, entropy_min, random_walk
+algorithm = "random_walk" # active_inf_5, active_inf_5_h3, active_inf_500, d_opt_particle, entropy_min, random_walk, random_walk_no_collision_avoidance
 ###
 
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -270,7 +270,7 @@ def setup_axis(ax, map_img):
     ax.set_ylabel('y (m)')
 
 def hot_transparent():
-    c = plt.cm.hot(np.linspace(0, 1, 256))
+    c = plt.cm.inferno(np.linspace(0, 1, 256))
     c[:, -1] = np.linspace(0, 1, 256)
     return LinearSegmentedColormap.from_list('hot_alpha', c)
 
@@ -286,7 +286,7 @@ def draw_heatmap(ax, h, x_range, y_range, label):
     im = ax.imshow(h,
                    extent=[x_range[0], x_range[1], y_range[0], y_range[1]],
                    origin='lower', cmap=hot_transparent(),
-                   vmin=0, vmax=np.nanpercentile(h, 98),
+                   vmin=np.nanpercentile(h, 2), vmax=np.nanpercentile(h, 98),
                    zorder=2, interpolation='bilinear')
     plt.colorbar(im, ax=ax, label=label, shrink=0.8)
 
