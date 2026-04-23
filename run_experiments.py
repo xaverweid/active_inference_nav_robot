@@ -198,7 +198,7 @@ def run_benchmarking():
     poses_file_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
-        'starting_poses_1000_h_map.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv, starting_poses_1000_h_map_large.csv]
+        'starting_poses_1000_my_map.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv, starting_poses_1000_h_map_large.csv]
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
@@ -220,10 +220,10 @@ def run_benchmarking():
                                     'convergence_threshold', 'bimodal_score_threshold',
                                     'planning_sigma', 'spatial_entropy_res'])
 
-            for i, p in enumerate(poses[0:100], start=0):
+            for i, p in enumerate(poses[50:100], start=50):
 
                 # Hard reset every 50 runs: sleep longer to let system breathe
-                if i > 0 and i % 50 == 0:
+                if i > 50 and i % 50 == 0:
                     print(f"[PERIODIC RESET] Run {i} — extended cooldown...")
                     time.sleep(30)  # let OS fully settle
 
