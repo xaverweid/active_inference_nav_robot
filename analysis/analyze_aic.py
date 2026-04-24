@@ -44,9 +44,9 @@ def load_map_metadata(map_path):
 # ADAPT regarding map, seconds per step, and algorithm:
 # PARAMETERS
 ###
-map_name = "my_map" # h_map, my_map OR h_map_large
+map_name = "h_map_large" # h_map, my_map OR h_map_large
 seconds_per_step = "5" # 1 OR 5
-algorithm = "random_walk" # active_inf_5, active_inf_5_h3, active_inf_500, d_opt_particle, entropy_min, random_walk, random_walk_no_collision_avoidance
+algorithm = "active_inf_5" # active_inf_5, active_inf_5_h3, active_inf_500, d_opt_particle, entropy_min, random_walk, random_walk_no_collision_avoidance
 ###
 
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -180,6 +180,7 @@ def load_all_csvs(csv_dir):
                              skiprows=1,         # skip the broken header row
                              names=COLUMN_NAMES) # apply correct column names
             df['run_id'] = i
+            df['run_file'] = os.path.basename(f)  # for better traceability
             dfs.append(df)
         except Exception as e:
             print(f"  Skipping {os.path.basename(f)}: {e}")
@@ -347,7 +348,7 @@ def plot_position_heatmap(df, map_img):
     print(f"Saved: {out}")
     plt.close()
 
-def plot_gaze_heatmap(df, map_img):
+def plot_gaze_heatmap(df, map_img): # this is the intended next position based on the action and current yaw (not very distinct from the visited pose heatmap)
     x_range, y_range = get_ranges(map_img, df)
     trans = df[~df['action_name'].isin(NO_TRANSLATION)]
     fig, ax = plt.subplots(1, 1, figsize=(8, 7))
@@ -950,6 +951,99 @@ def plot_bimodal_decision_analysis(df, map_img):
     plt.savefig(out, dpi=150, bbox_inches='tight')
     print(f"Saved: {out}")
     plt.close()
+
+def plot_bimodal_trajectories(df, map_img):
+    bimodal_steps = df[df['is_bimodal'] == 1.0]
+
+    if len(bimodal_steps) == 0:
+        print("  No bimodal steps found.")
+        return
+
+    bimodal_runs = (
+        bimodal_steps.groupby('run_id')['step']
+        .min()
+        .reset_index()
+        .rename(columns={'step': 'first_bimodal_step'})
+    )
+
+    colors = plt.cm.tab10(np.linspace(0, 1, len(bimodal_runs)))
+
+    # ── Plot 1: Full trajectory after first bimodal occurrence ───────────────
+    fig1, ax1 = plt.subplots(figsize=(10, 9))
+    fig1.suptitle('Trajectories After First Bimodal Occurrence',
+                  fontsize=14, fontweight='bold')
+    setup_axis(ax1, map_img)
+
+    for color, (_, row) in zip(colors, bimodal_runs.iterrows()):
+        run_id         = int(row['run_id'])
+        first_bim_step = int(row['first_bimodal_step'])
+
+        run_after = df[(df['run_id'] == run_id) & (df['step'] >= first_bim_step)]
+        traj_x = run_after['gt_pose_x'].values
+        traj_y = run_after['gt_pose_y'].values
+        if len(traj_x) == 0:
+            continue
+
+        start_x, start_y = traj_x[0],  traj_y[0]
+        end_x,   end_y   = traj_x[-1], traj_y[-1]
+
+        ax1.plot(traj_x, traj_y, color=color, linewidth=1.2, alpha=0.7, zorder=3)
+        ax1.scatter(start_x, start_y, color=color, s=60, marker='o',
+                    edgecolors='green', linewidths=2, zorder=5)
+        ax1.scatter(end_x, end_y, color=color, s=80, marker='X',
+                    edgecolors='red', linewidths=2, zorder=5)
+        ax1.annotate(f"run{run_id} (from step {first_bim_step})",
+                     (end_x, end_y), textcoords='offset points', xytext=(6, 4),
+                     fontsize=7, color=color, fontweight='bold')
+
+    from matplotlib.lines import Line2D
+    ax1.legend(handles=[
+        Line2D([0], [0], marker='o', color='w', markeredgecolor='green',
+               markersize=8, label='First bimodal step'),
+        Line2D([0], [0], marker='X', color='w', markeredgecolor='red',
+               markersize=8, label='Run end'),
+        Line2D([0], [0], color='gray', linewidth=1.2, label='Trajectory'),
+    ], loc='upper right')
+    ax1.set_title(f'All Steps From First is_bimodal=1 Onward\n({len(bimodal_runs)} runs)')
+    plt.tight_layout()
+    out1 = os.path.join(OUTPUT_DIR, 'bimodal_full_trajectory.pdf')
+    plt.savefig(out1, dpi=150, bbox_inches='tight')
+    print(f"Saved: {out1}")
+    plt.close()
+
+    # ── Plot 2: Only steps where is_bimodal=1 ───────────────────────────────
+    fig2, ax2 = plt.subplots(figsize=(10, 9))
+    fig2.suptitle('Steps Where is_bimodal=1', fontsize=14, fontweight='bold')
+    setup_axis(ax2, map_img)
+
+    for color, (_, row) in zip(colors, bimodal_runs.iterrows()):
+        run_id = int(row['run_id'])
+
+        bimodal_only = df[(df['run_id'] == run_id) & (df['is_bimodal'] == 1.0)]
+        traj_x = bimodal_only['gt_pose_x'].values
+        traj_y = bimodal_only['gt_pose_y'].values
+        if len(traj_x) == 0:
+            continue
+
+        ax2.scatter(traj_x, traj_y, color=color, s=15, alpha=0.6, zorder=3)
+        ax2.scatter(traj_x[0], traj_y[0], color=color, s=60, marker='o',
+                    edgecolors='green', linewidths=2, zorder=5)
+        ax2.annotate(f"run{run_id}",
+                     (traj_x[-1], traj_y[-1]), textcoords='offset points', xytext=(6, 4),
+                     fontsize=7, color=color, fontweight='bold')
+
+    ax2.legend(handles=[
+        Line2D([0], [0], marker='o', color='w', markeredgecolor='green',
+               markersize=8, label='First bimodal step per run'),
+        Line2D([0], [0], marker='o', color='gray', markersize=6,
+               label='Bimodal steps', linestyle='None'),
+    ], loc='upper right')
+    ax2.set_title(f'Only is_bimodal=1 Steps\n({len(bimodal_runs)} runs)')
+    plt.tight_layout()
+    out2 = os.path.join(OUTPUT_DIR, 'bimodal_steps_only.pdf')
+    plt.savefig(out2, dpi=150, bbox_inches='tight')
+    print(f"Saved: {out2}")
+    plt.close()
 # ─────────────────────────────────────────────
 # ANALYSIS 5 — RUN STATISTICS REPORT (txt)
 # ─────────────────────────────────────────────
@@ -1214,6 +1308,9 @@ def main():
 
     print("\nPlotting bimodal action preference...")
     plot_bimodal_action_preference(df)
+
+    print("\nPlotting bimodal trajectories...")
+    plot_bimodal_trajectories(df, map_img)
 
     print("\nSaving run statistics...")
     save_run_statistics(df, CSV_DIR, OUTPUT_DIR)
