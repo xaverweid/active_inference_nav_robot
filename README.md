@@ -10,16 +10,11 @@ The primary launch file (robot_launch.py) automates the complex setup required f
 
 This package contains the core intelligence for an autonomous robot using the Active Inference Framework (AIF). Unlike traditional navigation which follows pre-defined paths, this "Brain" node treats global localization as an inference problem—choosing actions that satisfy both epistemic value (information gain) and pragmatic value (collision avoidance)
 
-The active inference launch file (aic_launch.py) can be used after the diff_drive_robot is launched, and makes the robot automatically maneouver the environment to localize itself by using the particle cloud from AMCL as input and the active inference logic as control.
+The active inference launch file (aic_launch.py) can be used after the diff_drive_robot (robot_launch.py) is launched, and makes the robot automatically maneouver the environment to localize itself by using the particle cloud from AMCL as input and the active inference logic as control.
 
 ## System Requirements
 
 System: ROS2 Jazzy, Gazebo Harmonic
-
-## Known Issues / Bugs
-
-- When launching the robot_launch.py file, the system sometimes cannot find the models (diff_drive_robot/models). 
-    Restarting your setup should resolve this issue
 
 ## AMCL Reproducibility Patch
 

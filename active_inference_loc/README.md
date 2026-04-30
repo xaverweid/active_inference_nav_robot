@@ -34,71 +34,84 @@ Selects the action that best trades off information gain (epistemic value) and c
 
 Executes the action and updates localization using real sensor data.
 
-# Algorithm
+# Active Inference Main Algorithm (active_inf_5)
 
-## 1. Belief Estimation (AMCL)
+1. Belief Estimation (AMCL)
 
-AMCL processes incoming LiDAR data (and odometry)
+The system maintains a non-parametric belief state using a standard AMCL particle filter.
 
-Outputs a set of belief hypotheses, where each particle represents a possible robot pose.
+    Input: Real-world LiDAR scans, Odometry, and Map data.
 
-## 2. Expected Free Energy Calculation
+    Output: A distribution of 500 to 5000 pose hypotheses (particles).
 
-For each candidate action π, the Expected Free Energy G(π) is computed as the sum of Epistemic Value (uncertainty reduction) * alpha_epistemic and Pragmatic Value (collision risk) * beta_pragmatic
+2. Expected Free Energy (EFE) Calculation
 
-alpha_epistemic and beta_pragmatic are both precision parameters, and can be modify to induce different behaviors (Curiosity and Caution)
+The Active Inference Controller (AIC) evaluates a set of candidate actions π (e.g., FORWARD_LARGE, TURN_LEFT) by calculating their Expected Free Energy, G(π):
+G(π)≈α⋅Epistemic Value+β⋅Pragmatic Value
+A. Epistemic Value (Expected Information Gain)
 
-**EPISTEMIC VALUE (Entropy)**
+Goal: Select actions that maximize the distinctiveness of future sensory observations to resolve spatial ambiguity.
 
-Measures how much the action is expected to reduce localization uncertainty.
+    Belief Compression: The particles are clustered into 5 Gaussian Mixture Model (GMM) centers to ensure computational tractability.
 
-Steps:
-   1. Belief Compression: Use GMM Clustering to receive N Clusters 
-   2. Motion Prediction: Simulate moving all N particles according to the candidate action
-   3. Virtual Sensing: Predict what LiDAR measurements each moved particle would observe
-   4. Entropy Analysis: Calculate Shannon Entropy on the predicted new particle weights 
+    Forward Simulation: For each GMM center, the algorithm predicts the future pose and performs virtual raycasting to generate a synthetic LiDAR scan.
 
-Each Action receives an Entropy Value on their predicted new particle weights. Lower entropy (Higher entropy reduction) indicates a more informative action for localization.
+    Likelihood Mapping: We compute a pairwise squared-difference matrix between these predicted scans. Under an isotropic Gaussian sensor model (σplanning​=0.5), this is converted into a log-likelihood matrix.
 
-**PRAGMATIC VALUE (Collision Risk)**
+    Bayesian Posterior Update: Initial particle weights are combined with these log-likelihoods (using LogSumExp for stability) to derive a normalized posterior probability matrix.
 
-Measures how unsafe an action (distance to obstacle of new location) is expected to be.
+    Entropy Analysis: We calculate the Shannon Entropy for each hypothesized state.
 
-Steps: 
-   1. Belief Compression: Take the top 200 particles
-   2. Motion Prediction: Simulate moving all 200 particles according to the candidate action
-   3. Estimate collision risk using an exponential decay risk function based on predicted LiDAR distances
-        - Critical zone (distance to nearest obstacle ≤ robot radius): Risk = 1 (collision imminent/certain)
-        - Caution zone (robot radius < distance to nearest obstacle ≤ robot radius): Risk decays exponentially from 1 to 0 (smooth transition)
-        - Safe zone (distance to nearest obstacle > robot radius): Risk = 0 (far from obstacles)
+        Logic: If an action leads to a location where different hypotheses predict very different scans, entropy will be low upon observation, indicating high information gain.
 
-This term penalizes actions that are likely to result in unsafe future positions.
+    Final Weighting: The result is weighted by the prior probabilities of the GMM clusters to produce the final epistemic value.
 
-## 3. Action Selection (Active Inference Controller)
+B. Pragmatic Value (Expected Risk)
 
-The Active Inference Controller (AIC) selects the action that minimizes Expected Free Energy:
+Goal: Ensure robot safety by evaluating collision probability across the entire hypothesis space.
 
-π∗ = arg ⁡min ⁡π (Entropy * alpha_epistemic + Collision Risk * beta_pragmatic)
+    Full Distribution Evaluation: Unlike the epistemic term, risk is calculated across the top 500 particles. This prevents "averaging out" dangerous obstacles that a sparse GMM might miss.
 
-This naturally balances:
+    Path-Based Assessment: For every particle, the algorithm assesses the entire path from the current pose to the predicted pose.
 
-- Exploration (reduce belief uncertainty)
-- Safety (avoid collisions)
+    Spatial Risk Penalty: Risk is assessed using an exponential decay function based on the distance d(x,y) to the nearest obstacle:
 
-The Robot executes the selection action.
+        Collision Boundary: r=0.18m (Robot radius). Risk = 1.0.
 
-## 4. Localization Update (AMCL)
+        Danger Zone: Between r and dsafe​=0.50m. Risk follows an exponential decay controlled by σrisk​≈0.107m.
 
-AMCL receives new odometry and LiDAR measurements
+        Safe Zone: >0.50m. Risk = 0.0.
 
-Particles are moved accordingly
+    Expected Risk: The total pragmatic value is the weighted sum of risks across the 500-particle ensemble, scaled by a global penalty factor λ to match the numerical magnitude of the epistemic term.
 
-This is where localization actually happens. Active Inference does not update the belief — it only selects actions.
+3. Action Selection (AIC)
 
-## 5. Repeat from step 2 until Convergence has been reached.
+The AIC selects the action that minimizes G(π):
+π∗=argπmin​(α⋅Epistemic+β⋅Pragmatic)
 
-- Convergence: the spatial spread of the GMM clusters < 0.20
+This allows the robot to "curiously" explore ambiguous areas while "cautiously" avoiding obstacles that exist in any of its current location hypotheses.
+4. Localization Update (AMCL)
+
+The selected action π∗ is executed. AMCL receives the new physical motion data and LiDAR observations to perform its standard resampling update. The Active Inference loop effectively provides the optimal trajectory for the particle filter to converge as quickly as possible.
+5. Convergence
+
+The process repeats until the spatial spread of the GMM clusters < 0.35m, signaling that the "Kidnapped Robot" has successfully localized itself.
 
 
+#  Active Inference Variants
 
+active_inf_5 (Standard AIF): The primary implementation described in the algorithm section. It utilizes 5 GMM cluster means for epistemic calculations to balance computational tractability with localization performance.
 
+active_inf_500 (High-Resolution AIF): A high-fidelity variant that computes the epistemic value across the top 500-particle ensemble instead of compressed GMM means. This serves as a benchmark for the information loss associated with GMM clustering.
+
+active_inf_5_h3 (Deep AIF): Incorporates a temporal horizon of H=3. Rather than evaluating immediate next-steps, this configuration calculates the cumulative Expected Free Energy three steps into the future, allowing for more complex, multi-step exploratory trajectories.
+
+entropy_min (Risk-Agnostic): A "purely epistemic" configuration where the pragmatic weight β is set to zero. The robot selects actions solely to minimize Shannon Entropy, disregarding collision risks to isolate the efficacy of the epistemic drive.
+
+# Baselines & Controls
+
+random_walk (Constrained Stochastic): A stochastic control baseline where actions are selected randomly. However, it maintains a hard collision constraint, preventing the execution of any action that would result in a direct collision.
+
+random_walk_no_collision_avoidance (Unconstrained Stochastic): A "blind" random walk that executes actions without any regard for environmental obstacles. This serves as the absolute floor for performance and safety comparisons.
+
+d_opt_particle (D-Optimality / Active Sensing): A frequentist baseline that selects actions to maximize Fisher Information. By assessing the sensitivity of the LiDAR data to infinitesimal changes in the robot’s pose, this configuration moves the robot toward "geometrically salient" areas (e.g., corners, doorways) based on classical active sensing principles rather than Bayesian free energy.
