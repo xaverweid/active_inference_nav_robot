@@ -2,17 +2,7 @@
 
 This project provides an Active Inference framework for robot global localization, split between the **diff_drive_robot** (physical simulation) and the **active_inference_loc** (Bayesian control).
 
-### diff_drive_robot
-
-This ROS 2 package provides a complete simulation environment for a differential drive robot using Gazebo Harmonic. It integrates the full navigation stack for localization (AMCL), map serving, and sensor bridging, designed specifically as a foundation for advanced control algorithms like Active Inference.
-
-The primary launch file (robot_launch.py) automates the complex setup required for a mobile robot to "know where it is" within a known environment. It handles everything from spawning the physical model in a virtual world to initializing the particle filter for localization.
-
-### active_inference_loc
-
-This package contains the core intelligence for an autonomous robot using the Active Inference Framework (AIF). Unlike traditional navigation which follows pre-defined paths, this "Brain" node treats global localization as an inference problem—choosing actions that satisfy both epistemic value (information gain) and pragmatic value (collision avoidance)
-
-The active inference launch file (aic_launch.py) can be used after the diff_drive_robot (robot_launch.py) is launched, and makes the robot automatically maneouver the environment to localize itself by using the particle cloud from AMCL as input and the active inference logic as control.
+---
 
 ## Demonstration
 
@@ -42,11 +32,40 @@ https://github.com/user-attachments/assets/c040b72b-469a-450b-b495-5d60c4182233
 
 > **Observation:** As the video progresses, the "Active" nature of the algorithm becomes apparent: the robot intentionally chooses trajectories toward geometrically unique landmarks to minimize uncertainty, evidenced by the rapid collapse of the blue particle cloud.
 
-## System Requirements
+--- 
+
+## Repository Structure
+
+The project is divided into two specialized ROS 2 packages. While each contains its own detailed `README.md`, the overall architecture is split between physical simulation and Bayesian control:
+
+### [diff_drive_robot](./diff_drive_robot) (The "Body")
+Provides a complete simulation environment using **Gazebo Harmonic**. It integrates the full navigation stack for localization (AMCL), map serving, and sensor bridging.
+* **Primary Launch:** `robot_launch.py`
+* **Function:** Spawns the physical model and initializes the particle filter.
+* [Explore the diff_drive_robot README](./diff_drive_robot/README.md)
+
+### [active_inference_loc](./active_inference_loc) (The "Brain")
+Contains the core intelligence using the **Active Inference Framework (AIF)**. This node treats global localization as an inference problem rather than a path-following task.
+* **Primary Launch:** `aic_launch.py`
+* **Function:** Uses the AMCL particle cloud as a belief state and applies AIF logic for optimal action selection.
+* [Explore the active_inference_loc README](./active_inference_loc/README.md)
+
+---
+
+## Getting Started
+
+To reproduce the experiments, you must launch the packages in the following order:
+
+1. **Launch the Simulation:** Use `robot_launch.py` to spawn the robot and initialize the map and AMCL.
+2. **Launch the Controller:** Once the particle cloud is online, use `aic_launch.py` to start the Active Inference control loop.
+
+---
+
+## System Requirements & Patching
 
 System: ROS2 Jazzy, Gazebo Harmonic
 
-## AMCL Reproducibility Patch
+### AMCL Reproducibility Patch
 
 To ensure deterministic localization behavior during Active Inference Control
 experiments, we patched `nav2_amcl` to fix the random seed used during global
