@@ -29,7 +29,7 @@ def generate_launch_description():
     # Path to default world  
     # if you change world file, be sure to also change the .yaml path further down (my_map.yaml, h_map_world.yaml, h_map_world_large.yaml, h_map_world_very_large.yaml)
     # PARAMETERS
-    world_path = os.path.join(pkg_dir,'worlds', 'h_map_world_very_large.sdf') #[world.sdf, h_map_world.sdf, h_map_world_large.sdf, h_map_world_very_large.sdf]
+    world_path = os.path.join(pkg_dir,'worlds', 'world.sdf') #[world.sdf, h_map_world.sdf, h_map_world_large.sdf, h_map_world_very_large.sdf]
 
     # Launch Arguments
     declare_world = DeclareLaunchArgument(
@@ -107,7 +107,7 @@ def generate_launch_description():
 
     # Ensure this path is correct for the SLAM generated map (see mapping_launch.py if you need to create one)
     # PARAMETERS
-    map_file = os.path.join(pkg_dir, 'maps', 'h_map_very_large.yaml')  #[h_map.yaml, h_map_large.yaml, my_map.yaml]
+    map_file = os.path.join(pkg_dir, 'maps', 'my_map.yaml')  #[my_map.yaml, h_map.yaml, h_map_large.yaml, h_map_very_large.yaml]
 
     amcl_params = os.path.join(pkg_dir, 'config', 'amcl.yaml')  
 
@@ -157,7 +157,7 @@ def generate_launch_description():
         rsp,
         gazebo_server,
         # disable GUI for run_experiment experimental run script
-        # gazebo_client, 
+        gazebo_client, 
         ros_gz_bridge,
         spawn_diff_bot,
         starting_pose_publisher,

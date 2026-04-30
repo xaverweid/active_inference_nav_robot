@@ -198,13 +198,13 @@ def run_benchmarking():
     poses_file_path = os.path.join(
         get_package_share_directory('diff_drive_robot'),
         'config',
-        'starting_poses_300_100middlecorridor_h_map_very_large.csv' # [starting_poses_1000_h_map.csv, starting_poses_1000_my_map.csv, starting_poses_1000_h_map_large.csv, starting_poses_1000_h_map_very_large.csv]
+        'starting_poses_1000_my_map.csv' # [starting_poses_1000_my_map.csv, starting_poses_1000_h_map.csv, starting_poses_1000_h_map_large.csv, starting_poses_100_MiddleCorr_h_map_very_large.csv, starting_poses_200_h_map_very_large.csv]
     ) 
     poses = load_poses_from_csv(poses_file_path)
 
-    algos = ["active_inf_5", "active_inf_5_h3", "random_walk"] # ["active_inf_5", "active_inf_500", "active_inf_5_h3", "entropy_min", "random_walk", "random_walk_no_collision_avoidance", "d_opt_particle"]
-    seconds_per_step = ['1', '5'] #, '1', '5'
-    map_name= 'h_map_very_large' # 'h_map', 'my_map', 'h_map_large', 'h_map_very_large'
+    algos = ["active_inf_5", "active_inf_5_h3"] # ["active_inf_5", "active_inf_500", "active_inf_5_h3", "entropy_min", "random_walk", "random_walk_no_collision_avoidance", "d_opt_particle"]
+    seconds_per_step = ['5'] #, '1', '5'
+    map_name= 'my_map' # 'my_map', 'h_map', 'h_map_large', 'h_map_very_large'
 
     data_root = os.path.join(os.getcwd(), "src", "data")
 
@@ -219,8 +219,8 @@ def run_benchmarking():
             summary_writer.writerow(['algorithm', 'pose_index', 'status', 'steps', 'alpha', 'beta',
                                     'convergence_threshold', 'bimodal_score_threshold',
                                     'planning_sigma', 'spatial_entropy_res'])
-
-            for i, p in enumerate(poses[0:200], start=0):
+            # Change the number of starting poses here (currently set to 100 to keep total runtime manageable, but can be up to 1000 as per the provided CSV)
+            for i, p in enumerate(poses[0:100], start=0):
 
                 # Hard reset every 50 runs: sleep longer to let system breathe
                 if i > 0 and i % 50 == 0:

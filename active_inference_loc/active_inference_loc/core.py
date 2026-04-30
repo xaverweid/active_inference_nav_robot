@@ -510,6 +510,64 @@ class ActiveInferenceController:
         expected_entropy = np.sum(rep_weights * entropies)
 
         return float(expected_entropy)
+    
+    # New version of epistemic value calculation with variance-based beam weighting, to emphasize beams with higher expected information gain (higher variance across particles)
+    # Not used in current code
+    def calculate_efe_epistemic_variance_weighted(self, predicted_poses, rep_weights):
+        """Calculate expected free energy for epistemic (information gain) value."""
+        # 1. Extract metadata for the Numba function
+        self.get_logger().info("Calculating epistemic value with variance-based beam weighting.")
+        res = float(self.map_metadata['resolution'])
+        ox = float(self.map_metadata['origin_x'])
+        oy = float(self.map_metadata['origin_y'])
+        pred_scans = raycast_scan_numba(
+            poses_4d=np.asarray(predicted_poses, dtype=np.float64),
+            dist_map=self.dist_map,res=res,ox=ox,oy=oy,
+            fov_deg=self.fov_deg, num_beams=self.num_beams, max_range=self.laser_max_range, min_range=self.laser_min_range, stddev=self.laser_std_dev)        
+        
+        # Sanity checks / normalization
+        rep_weights = np.asarray(rep_weights, dtype=np.float64)
+        if rep_weights.ndim != 1:
+            raise ValueError("rep_weights must be a 1D array")
+        if pred_scans.shape[0] != len(rep_weights):
+            raise ValueError("Number of predicted scans must match number of weights.")
+
+        # Ensure numeric types
+        pred_scans = np.asarray(pred_scans, dtype=np.float64)
+
+        # Pairwise squared differences between scan vectors
+        
+        diffs = pred_scans[:, np.newaxis, :] - pred_scans[np.newaxis, :, :]
+
+        # New: Variance based beam weighting, to emphasize beams with higher expected information gain (higher variance across particles)
+        # Calculate variance and normalize so weights sum to num_beams
+        beam_variance = np.var(pred_scans, axis=0)
+        num_beams = pred_scans.shape[1]
+
+        # Multiply by num_beams so the overall magnitude of sq_diffs remains consistent
+        beam_weights = (beam_variance / (beam_variance.sum() + 1e-12)) * num_beams 
+
+        # Now sq_diffs is a properly scaled sum
+        sq_diffs = np.sum(diffs**2 * beam_weights[np.newaxis, np.newaxis, :], axis=2)
+
+        # MSE remains geometrically correct
+        mse = sq_diffs / num_beams
+        ll_matrix = -0.5 * mse / (self.planning_sigma**2)
+        
+        # Stabilize weights and compute posterior mixture responsibilities
+        log_rep_weights = np.log(rep_weights + 1e-12)
+        log_w_matrix = ll_matrix + log_rep_weights[np.newaxis, :]
+        # LogSumExp for numerical stability
+        log_z = scipy.special.logsumexp(log_w_matrix, axis=1, keepdims=True)
+        # Exponentiate to get probabilities P(z|x)
+        w_matrix = np.exp(log_w_matrix - log_z)
+
+        # Numerically-stable entropy: clip tiny values to avoid negative zeros
+        w_clipped = np.clip(w_matrix, 1e-12, 1.0)
+        entropies = -np.sum(w_clipped * np.log(w_clipped), axis=1)
+        expected_entropy = np.sum(rep_weights * entropies)
+
+        return float(expected_entropy)
 
     def calculate_efe_pragmatic(self, pred_particles, sample_weights):
         """Calculate expected free energy for pragmatic (safety) value."""
