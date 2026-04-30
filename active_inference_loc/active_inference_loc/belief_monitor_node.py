@@ -23,6 +23,17 @@ class BeliefMonitorNode(Node):
         self.latest_weights = None
         self.lock = threading.Lock()
 
+        self.action_id_to_name = {
+                0.0: 'WAIT',
+                1.0: 'FORWARD_SMALL',
+                2.0: 'FORWARD_LARGE',
+                3.0: 'ROTATE_LEFT',
+                4.0: 'ROTATE_RIGHT',
+                5.0: 'TURN_LEFT',
+                6.0: 'TURN_RIGHT',
+                7.0: 'BACKWARD_SMALL'
+            }
+
         map_qos = QoSProfile(durability=DurabilityPolicy.TRANSIENT_LOCAL, depth=1)
         particle_qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, history=HistoryPolicy.KEEP_LAST, depth=1)
 
@@ -140,7 +151,8 @@ class BeliefMonitorNode(Node):
             spatial_entropy = f"{metrics[10]:.2f}" if len(metrics) > 10 else 'N/A'
             pos_error = f"{metrics[7]:.3f}" if len(metrics) > 7 else 'N/A'
             rot_error = f"{metrics[8]:.3f}" if len(metrics) > 8 else 'N/A'
-            action = metrics[11] if len(metrics) > 11 else 'N/A'
+            action_val = metrics[11] if len(metrics) > 11 else 'N/A'
+            action_string = self.action_id_to_name.get(float(action_val), "UNKNOWN")            
             
             table_text = (
                 f"▼ GLOBAL PARAMETERS\n"
@@ -158,11 +170,11 @@ class BeliefMonitorNode(Node):
                 f"Total G:        {metrics[2]:.2f}\n"
                 f"-------------------------------\n"
                 f"▼ STATUS\n"
-                f"Runtime:        {int(metrics[5]):.2f} steps\n"
+                f"Runtime:        {int(metrics[5]) if len(metrics) > 5 else 'N/A'}\n"
                 f"Particles:      {int(metrics[34]) if len(metrics) > 34 else 'N/A'}\n"
                 f"Pos Error:      {pos_error}m\n"
                 f"Rot Error:      {rot_error}rad\n"
-                f"Action:         {action}\n"
+                f"Action:         {action_string}\n"
             )
             self.dashboard.set_text(table_text)
 
