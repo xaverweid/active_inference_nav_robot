@@ -38,7 +38,7 @@ class AICNode(Node):
         self.get_logger().info(f"--- with seconds per step t := {self.seconds_per_step}")
 
         self.time_delta = self.seconds_per_step
-        self.ticks_to_wait = 5.0
+        self.ticks_to_wait = 80.0
         self.ticks_passed = 0
 
         # State Tracking

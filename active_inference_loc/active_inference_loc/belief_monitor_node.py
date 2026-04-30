@@ -7,8 +7,9 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import numpy as np
 import threading
+import scipy.special
 
-# Importing your existing utilities
+# Assuming these utilities are available in your workspace
 from .utils import get_map_metadata, ParticleClusturer, get_covariance_ellipse
 
 class BeliefMonitorNode(Node):
@@ -17,58 +18,53 @@ class BeliefMonitorNode(Node):
 
         self.clusturer = ParticleClusturer()
         self.map_metadata = None
-        self.current_metrics = None  # Will be set once metrics are received
+        self.current_metrics = None
         self.latest_cloud_data = None
         self.latest_weights = None
         self.lock = threading.Lock()
 
         map_qos = QoSProfile(durability=DurabilityPolicy.TRANSIENT_LOCAL, depth=1)
-        particle_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=1
-        )
+        particle_qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, history=HistoryPolicy.KEEP_LAST, depth=1)
 
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, map_qos)
         self.cloud_sub = self.create_subscription(Float32MultiArray, '/belief/particles_filtered', self.cloud_callback, particle_qos)
         self.metrics_sub = self.create_subscription(Float32MultiArray, '/aic_metrics', self.metrics_callback, 10)
 
         plt.ion()
-        self.fig, self.ax = plt.subplots(figsize=(10, 8))
+        # Create two subplots: [Map] [Dashboard]
+        self.fig, (self.ax, self.ax_info) = plt.subplots(1, 2, figsize=(10, 8), gridspec_kw={'width_ratios': [2, 1]})
+        plt.subplots_adjust(left=0.05, right=0.95, wspace=0.00)
         self.fig.canvas.manager.set_window_title('AIC Belief Monitor')
         
-        self.dashboard = self.ax.text(0.02, 0.98, 'Waiting for data...', transform=self.ax.transAxes, 
-                                      verticalalignment='top', family='monospace', fontsize=9,
-                                      bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray'),
-                                      zorder=100)
+        # Setup info axis (hide borders and ticks)
+        self.ax_info.axis('off')
+        self.dashboard = self.ax_info.text(0.05, 0.95, 'Waiting for data...', 
+                                           verticalalignment='top', family='monospace', fontsize=10,
+                                           bbox=dict(boxstyle='round', facecolor='white', alpha=0.1, edgecolor='none'))
         
-        self.get_logger().info("Belief Monitor Node Started")
+        self.get_logger().info("Belief Monitor Node Started with 90 deg rotation")
 
     def map_callback(self, msg):
         if self.map_metadata is None:
             self.map_metadata = get_map_metadata(msg)
             
-            map_data = self.map_metadata['data']
+            # Rotate map 90 degrees CCW (left)
+            map_data = np.rot90(self.map_metadata['data'], k=3)
             
-           # Standard ROS Map Bounds: [x_min, x_max, y_min, y_max]
             orig_x_min = self.map_metadata['origin_x']
             orig_x_max = orig_x_min + self.map_metadata['width'] * self.map_metadata['resolution']
             orig_y_min = self.map_metadata['origin_y']
             orig_y_max = orig_y_min + self.map_metadata['height'] * self.map_metadata['resolution']
             
-            self.extent = [orig_x_min, orig_x_max, orig_y_min, orig_y_max]
+            # Coordinate Transform for Extent: x' = -y, y' = x
+            # New X range: [-orig_y_max, -orig_y_min]
+            # New Y range: [orig_x_min, orig_x_max]
+            self.extent = [-orig_y_max, -orig_y_min, orig_x_min, orig_x_max]
 
             self.ax.clear()
-            self.ax.imshow(map_data, cmap='gray', origin='lower',
-                           extent=self.extent, alpha=0.6)
-            self.ax.set_title("Robot Belief Monitor (Raw/Unrotated Frame)")
-            
-            # Re-add dashboard since ax.clear() removes it
-            self.dashboard = self.ax.text(0.02, 0.98, 'Waiting for data...', transform=self.ax.transAxes, 
-                                      verticalalignment='top', family='monospace', fontsize=9,
-                                      bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray'),
-                                      zorder=100)
-            
+            self.ax.imshow(map_data, cmap='gray', origin='lower', extent=self.extent, alpha=0.6)
+            self.ax.set_title("Robot Belief Monitor")
+
     def metrics_callback(self, msg):
         with self.lock:
             if len(msg.data) >= 3:
@@ -77,51 +73,47 @@ class BeliefMonitorNode(Node):
     def cloud_callback(self, msg):
         try:
             raw_data = np.array(msg.data).reshape(-1, 5)
+            # Original raw data
             points = raw_data[:, :2]           
             cos_yaw = raw_data[:, 2]
             sin_yaw = raw_data[:, 3]
             weights = raw_data[:, 4]
             
-            processed_cloud = np.column_stack((points, cos_yaw, sin_yaw))
+            # Apply 90-degree CCW transformation: x' = -y, y' = x
+            rot_points = np.column_stack((-points[:, 1], points[:, 0]))
+            
+            # Rotate vectors: [cos', sin'] = [-sin, cos]
+            rot_cos = -sin_yaw
+            rot_sin = cos_yaw
+
+            self.latest_cloud_data = np.column_stack((rot_points, rot_cos, rot_sin))
+            self.latest_weights = weights
 
         except Exception as e:
             self.get_logger().error(f"Failed to reshape particle data: {e}")
-            return
 
-        # 2. UPDATE SHARED DATA INSIDE THE LOCK
-        with self.lock:
-            # Store both the points and weights so the main loop can use them
-            self.latest_cloud_data = processed_cloud
-            self.latest_weights = weights
-        
     def update_plot(self):
         with self.lock:
             if self.current_metrics is None or self.latest_cloud_data is None or self.latest_weights is None:
                 return
-            
-            points = self.latest_cloud_data.copy()
+            points_rot = self.latest_cloud_data.copy()
             weights = self.latest_weights.copy()
             metrics = list(self.current_metrics)
-
             self.latest_cloud_data = None
             self.latest_weights = None
 
         try:
+            # GMM Clustering on rotated points
+            cluster_poses, cluster_weights, _ = self.clusturer.get_representative_clusters_from_gmm(points_rot, weights)
             
-            cluster_poses, cluster_weights, _ = self.clusturer.get_representative_clusters_from_gmm(points, weights)
-            
-            # 2. RENDERING LOGIC
+            # Clear previous frame artists
             for artist in list(self.ax.collections) + list(self.ax.patches):
                 artist.remove()
-            for txt in list(self.ax.texts):
-                if txt != self.dashboard: txt.remove()
 
-            # Plot Unrotated Particles
-            self.ax.scatter(points[:, 0], points[:, 1], s=1, c='blue', alpha=0.1)  
-            # Use the GMM to predict labels for the particles directly
-            labels = self.clusturer.gmm.predict(points)
-            # Normalization for colors (0 to max weight)
-            # This ensures the "best" cluster is always greenest
+            # Plot Rotated Particles
+            self.ax.scatter(points_rot[:, 0], points_rot[:, 1], s=1, c='blue', alpha=0.1)  
+            
+            labels = self.clusturer.gmm.predict(points_rot)
             norm = plt.Normalize(vmin=0, vmax=np.max(cluster_weights))
             cmap = plt.cm.RdYlGn
             
@@ -130,31 +122,28 @@ class BeliefMonitorNode(Node):
                 cluster_mask = (labels == i)
                 if np.sum(cluster_mask) < 3: continue
                 
-                # Determine Color based on Weight
-                # High weight = Green, Low weight = Red
                 color = cmap(norm(weight))
-                # Get ellipse for the rotated cluster
-                res = get_covariance_ellipse(points[cluster_mask, :2])
+                res = get_covariance_ellipse(points_rot[cluster_mask, :2])
                 if res:
                     width, height, angle = res
-                    # Draw Belief Ellipse
+                    # Draw Belief Ellipse (angle is already relative to rotated points)
                     ell = Ellipse(xy=(mx, my), width=width, height=height, angle=angle, 
                                 edgecolor=color, fc=color, lw=2, alpha=0.4, zorder=3)
                     self.ax.add_patch(ell)
                     
-                    # Draw Heading Arrow (Red stays red for visibility)
+                    # Draw Heading Arrow (already transformed in cloud_callback)
                     self.ax.arrow(mx, my, 0.4*ctheta, 0.4*stheta, color='blue', 
                                 head_width=0.1, zorder=5, alpha=min(1.0, weight*5))
                 
             # Dashboard Update
-
             shannon_h = f"{metrics[9]:.2f}" if len(metrics) > 9 else 'N/A'
             spatial_entropy = f"{metrics[10]:.2f}" if len(metrics) > 10 else 'N/A'
             pos_error = f"{metrics[7]:.3f}" if len(metrics) > 7 else 'N/A'
             rot_error = f"{metrics[8]:.3f}" if len(metrics) > 8 else 'N/A'
             action = metrics[11] if len(metrics) > 11 else 'N/A'
+            
             table_text = (
-                f"▼ PARAMETERS (fixed)\n"
+                f"▼ GLOBAL PARAMETERS\n"
                 f"alpha (epistemic):  {metrics[3]:.2f}\n"
                 f"beta  (pragmatic):  {metrics[4]:.2f}\n"
                 f"-------------------------------\n"
@@ -164,15 +153,16 @@ class BeliefMonitorNode(Node):
                 f"Convergence:  {metrics[6]:.2f}\n"
                 f"-------------------------------\n"
                 f"▼ AIC POLICY (G)\n"
-                f"Expected Epistemic: {metrics[0]:.2f}\n"
-                f"Expected Pragmatic: {metrics[1]:.2f}\n"
-                f"Total Expected G:   {metrics[2]:.2f}\n"
+                f"Exp. Epistemic: {metrics[0]:.2f}\n"
+                f"Exp. Pragmatic: {metrics[1]:.2f}\n"
+                f"Total G:        {metrics[2]:.2f}\n"
                 f"-------------------------------\n"
-                f"Runtime:            {int(metrics[5]):.2f}\n"
-                f"N Particles:        {int(metrics[34]) if len(metrics) > 34 else 'N/A'}\n"
-                f"Position Error:     {pos_error}\n"
-                f"Rotational Error:   {rot_error}\n"
-                f"Selected Action:    {action}\n"
+                f"▼ STATUS\n"
+                f"Runtime:        {int(metrics[5]):.2f} steps\n"
+                f"Particles:      {int(metrics[34]) if len(metrics) > 34 else 'N/A'}\n"
+                f"Pos Error:      {pos_error}m\n"
+                f"Rot Error:      {rot_error}rad\n"
+                f"Action:         {action}\n"
             )
             self.dashboard.set_text(table_text)
 
@@ -191,7 +181,7 @@ def main(args=None):
     try:
         while rclpy.ok():
             node.update_plot()
-            plt.pause(0.1)
+            plt.pause(0.05)
     except KeyboardInterrupt:
         pass
     finally:
