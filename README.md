@@ -22,6 +22,25 @@ https://github.com/user-attachments/assets/c040b72b-469a-450b-b495-5d60c4182233
 
 
 
+### Demonstration Description
+
+* **Left Panel: Physical Simulation (Gazebo)**
+  Shows the differential drive robot (purple) navigating the environment. This represents the "ground truth" of the robot's physical state.
+
+* **Center Panel: Robot Belief Monitor**
+  Visualizes the agent's internal generative model:
+  * **Background:** The static `.pgm` occupancy map.
+  * **Blue Particles:** The AMCL distribution representing the belief state.
+  * **GMM Clusters:** The compressed belief hypotheses used by the AIC to calculate epistemic value. Watch as these clusters move and "collapse" into a single point as the robot resolves the environment's symmetry.
+
+* **Right Panel: Live Telemetry & Diagnostics**
+  A real-time dashboard displaying the mathematical "inner workings" of the controller:
+  * **Global Parameters:** Current weights for Curiosity ($\alpha$) and Caution ($\beta$).
+  * **Belief Metrics:** Live calculation of Shannon Entropy, spatial dispersion and convergence (threshold $< 0.35$m).
+  * **AIC Policy:** Tracking the expected pragmatic and epistemic value for the chosen action.
+  * **Status:** Displays current runtime, number of particles, positional and rotational error, as well as the last chosen action. 
+
+> **Observation:** As the video progresses, the "Active" nature of the algorithm becomes apparent: the robot intentionally chooses trajectories toward geometrically unique landmarks to minimize uncertainty, evidenced by the rapid collapse of the blue particle cloud.
 
 ## System Requirements
 
