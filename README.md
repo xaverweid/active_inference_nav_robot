@@ -1,4 +1,6 @@
-Active Inference Localization Algorithm - separated between the two-wheel drive robot packge (diff_drive_robot) and the Active Inference Control package (active_inference_loc)
+# Active Inference Localization Algorithm
+
+This project provides an Active Inference framework for robot global localization, split between the **diff_drive_robot** (physical simulation) and the **active_inference_loc** (Bayesian control).
 
 ### diff_drive_robot
 
@@ -11,6 +13,15 @@ The primary launch file (robot_launch.py) automates the complex setup required f
 This package contains the core intelligence for an autonomous robot using the Active Inference Framework (AIF). Unlike traditional navigation which follows pre-defined paths, this "Brain" node treats global localization as an inference problem—choosing actions that satisfy both epistemic value (information gain) and pragmatic value (collision avoidance)
 
 The active inference launch file (aic_launch.py) can be used after the diff_drive_robot (robot_launch.py) is launched, and makes the robot automatically maneouver the environment to localize itself by using the particle cloud from AMCL as input and the active inference logic as control.
+
+## Demonstration
+
+
+
+https://github.com/user-attachments/assets/c040b72b-469a-450b-b495-5d60c4182233
+
+
+
 
 ## System Requirements
 
