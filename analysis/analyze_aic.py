@@ -6,14 +6,14 @@ Usage:
 
 Expected project layout:
   <repo_root>/
-    active_inference_nav_robot/
-      diff_drive_robot/
-        maps/
-          my_map.pgm
-    analysis/
-      analyze_heatmaps.py   <- this file
-    data/                <- CSV files (git-ignored)
-    figures/                <- output figures (git-ignored)
+└── active_inference_nav_robot/          ← the GitHub repo
+    ├── diff_drive_robot/
+    │   └── maps/
+    │       └── my_map.pgm
+    ├── analysis/
+    │   └── analyze_heatmaps.py
+    ├── data/                            ← CSV files (git-ignored)
+    └── figures/                         ← output figures (git-ignored)
 """
 
 import os
@@ -22,8 +22,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.cm as cm
+import matplotlib.colors as colors
 from scipy.ndimage import gaussian_filter
 import yaml
+
 
 def load_map_metadata(map_path):
     """Read resolution and origin from the .yaml file next to the .pgm."""
@@ -44,29 +47,37 @@ def load_map_metadata(map_path):
 # ADAPT regarding map, seconds per step, and algorithm:
 # PARAMETERS
 ###
-map_name = "h_map_large" # h_map, my_map OR h_map_large
+map_name = "h_map_very_large" # my_map, h_map, h_map_very_large
 seconds_per_step = "5" # 1 OR 5
 algorithm = "active_inf_5" # active_inf_5, active_inf_5_h3, active_inf_500, d_opt_particle, entropy_min, random_walk, random_walk_no_collision_avoidance
-###
+map_name_data = "h_map_very_large_MiddleCorr"   # my_map, h_map, h_map_very_large_MiddleCorr, h_map_very_large_RandomStart, h_map_very_large_RandomStart_differentepistemicCalc
+
+''' 
+starting_poses_100_my_map.csv
+starting_poses_100_h_map.csv
+starting_poses_200_h_map_very_large.csv (corresponding to h_map_very_large_RandomStart and h_map_very_large_RandomStart_differentepistemicCalc)
+starting_poses_100_MiddleCorr_h_map_very_large.csv (corresponding to h_map_very_large_MiddleCorr)
+'''
+starting_poses_file_name ="starting_poses_100_MiddleCorr_h_map_very_large.csv"  
+sim_id = os.path.join(map_name_data, seconds_per_step, algorithm)
 
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT   = os.path.dirname(SCRIPT_DIR)          # active_inference_nav_robot/
-PARENT_ROOT = os.path.dirname(REPO_ROOT) 
 
-starting_poses = f"starting_poses_1000_{map_name}.csv"
-sim_id = os.path.join(map_name, seconds_per_step, algorithm)
+starting_poses = os.path.join(REPO_ROOT, "data", "starting_poses", starting_poses_file_name)
+CSV_DIR        = os.path.join(REPO_ROOT, "data", sim_id)
+OUTPUT_DIR     = os.path.join(REPO_ROOT, "figures", sim_id)
+MAP_PATH       = os.path.join(REPO_ROOT, "diff_drive_robot", "maps", f"{map_name}.pgm")
 
-CSV_DIR = os.path.join(PARENT_ROOT, "data", sim_id) # ../data/ — outside repo
-OUTPUT_DIR = os.path.join(PARENT_ROOT, "figures", sim_id)  # ../figures/ — outside repo
-MAP_PATH   = os.path.join(REPO_ROOT, "diff_drive_robot", "maps", f"{map_name}.pgm") 
+
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # --- VERIFICATION ---
 print(f"--- PATH CHECK ---")
-print(f"Targeting Map: {MAP_PATH}")
+print(f"Targeting PGM Map: {MAP_PATH}")
 print(f"Searching CSVs in: {CSV_DIR}")
 if not os.path.exists(MAP_PATH):
-    print(f"⚠️  WARNING: Map file not found!")
+    print(f"⚠️  WARNING: PGM Map file not found!")
 if not os.path.exists(CSV_DIR):
     print(f"⚠️  WARNING: Data directory not found!")
 
@@ -123,6 +134,16 @@ ACTION_EFFECTS_long = {
     'BACKWARD_SMALL':{'linear': -0.10, 'angular': 0.0}, 
 }
 
+algorithm_scientific_dict = {
+    "active_inf_5": "Standard AIC",
+    "active_inf_5_h3": "Deep AIC",
+    "active_inf_500": "Full-Distribution AIC",
+    "d_opt_particle": "D-Optimality",
+    "entropy_min": "Purely Epistemic AIC",
+    "random_walk": "Constrained Random",
+    "random_walk_no_collision_avoidance": "Unconstrained Random",
+}
+
 NO_TRANSLATION        = {'WAIT', 'ROTATE_LEFT', 'ROTATE_RIGHT'}
 ACTION_DT             = dt_val - 0.1
 # Dynamic Dictionary Selection
@@ -139,6 +160,43 @@ QUIVER_GRID_M         = 0.5
 GAUSSIAN_SIGMA        = 1.5 # Increase it if the result looks noisy, decrease it if it looks too blurry.
 POS_ERROR_THRESHOLD = 0.5   # metres
 ROT_ERROR_THRESHOLD = 0.5   # radians
+
+# VMIN and VMAX heatmap values adjusted for each map and step duration to optimize color contrast and visibility of patterns (see /figures/heatmap_position to determine scale best/max values).
+if seconds_per_step == "1":
+    if map_name_data == "my_map":
+        GLOBAL_VMIN = 0.0
+        GLOBAL_VMAX = 15.0
+    elif map_name_data == "h_map": 
+        GLOBAL_VMIN = 0.0
+        GLOBAL_VMAX = 38.0
+    elif map_name_data == "h_map_very_large_RandomStart":
+        GLOBAL_VMIN = 0.0
+        GLOBAL_VMAX = 25.0
+    elif map_name_data == "h_map_very_large_MiddleCorr":
+        GLOBAL_VMIN = 0.0
+        GLOBAL_VMAX = 79.0
+    else:
+        print(f"  ERROR: Unrecognized map_name_data '{map_name_data}' for seconds_per_step=1. Using default vmin/vmax.")
+
+if seconds_per_step == "5":
+    if map_name_data == "my_map":
+        GLOBAL_VMIN = 0.0
+        GLOBAL_VMAX = 4.5
+    elif map_name_data == "h_map":
+        GLOBAL_VMIN = 0.0
+        GLOBAL_VMAX = 14.0
+    elif map_name_data == "h_map_very_large_RandomStart":
+        GLOBAL_VMIN = 0.0
+        GLOBAL_VMAX = 12.2
+    elif map_name_data == "h_map_very_large_MiddleCorr":
+        GLOBAL_VMIN = 0.0
+        GLOBAL_VMAX = 26.0
+    elif map_name_data == "h_map_very_large_RandomStart_differentepistemicCalc":
+        GLOBAL_VMIN = 0.0
+        GLOBAL_VMAX = 9.5
+    else:
+        print(f"  ERROR: Unrecognized map_name_data '{map_name_data}' for seconds_per_step=5. Using default vmin/vmax.")
+
 
 # ─────────────────────────────────────────────
 # LOAD CSVs
@@ -230,7 +288,6 @@ def action_to_vector(yaw, action_name):
     avg_yaw = (yaw + yaw_end) / 2.0
     return lin * np.cos(avg_yaw) * ACTION_DT, lin * np.sin(avg_yaw) * ACTION_DT
 
-# TODO: check this code, looks wrong, considering gt, yaw weighted mean etc...
 def prepare_df(df):
     df = df.copy()
     df['action_name'] = df['selected_action'].astype(float).map(ACTION_MAP).fillna('UNKNOWN')
@@ -283,6 +340,16 @@ def build_heatmap(x, y, x_range, y_range):
     h[h < 0.1] = np.nan
     return h
 
+#New: has fixed vmin and vmax for all heatmaps, so that they can be compared across algorithms and maps.
+def draw_heatmap(ax, h, x_range, y_range, label):
+    im = ax.imshow(h,
+                   extent=[x_range[0], x_range[1], y_range[0], y_range[1]],
+                   origin='lower', cmap=hot_transparent(),
+                   vmin=GLOBAL_VMIN, vmax=GLOBAL_VMAX, # Use the global constants
+                   zorder=2, interpolation='bilinear')
+    plt.colorbar(im, ax=ax, label=label, shrink=0.8)
+'''
+#Old
 def draw_heatmap(ax, h, x_range, y_range, label):
     im = ax.imshow(h,
                    extent=[x_range[0], x_range[1], y_range[0], y_range[1]],
@@ -290,9 +357,9 @@ def draw_heatmap(ax, h, x_range, y_range, label):
                    vmin=np.nanpercentile(h, 2), vmax=np.nanpercentile(h, 98),
                    zorder=2, interpolation='bilinear')
     plt.colorbar(im, ax=ax, label=label, shrink=0.8)
-
+'''
 # ─────────────────────────────────────────────
-# ANALYSIS 0 — STARTING POSITIONS ON MAP
+# ANALYSIS 0 — STARTING and FINAL POSITIONS ON MAP
 # ─────────────────────────────────────────────
 
 def plot_starting_positions(df, map_img):
@@ -329,10 +396,90 @@ def plot_starting_positions(df, map_img):
     print(f"Saved: {out}")
     plt.close()
 
+def plot_final_positions(df, map_img):
+    # Get final step per run
+    finals = (
+        df.sort_values('step')
+          .groupby('run_id')
+          .last()
+          .reset_index()[['run_id', 'gt_pose_x', 'gt_pose_y', 'gt_pose_yaw']]
+    )
+
+    # Load summary to get status, using CSV_DIR global
+    summary_files = [f for f in os.listdir(CSV_DIR) if f.startswith('summary_')]
+    if not summary_files:
+        print("  No summary file found.")
+        return
+    summary = pd.read_csv(os.path.join(CSV_DIR, summary_files[0]))
+
+    # Exclude instant collisions (step=0) to match load_valid_summary logic
+    summary = summary[~((summary['status'].str.contains('Collision', na=False)) &
+                        (summary['steps'] == 0))].copy().reset_index(drop=True)
+
+    # run_id is 0-indexed load order, summary rows match that order
+    finals['status'] = finals['run_id'].map(
+        summary['status'].to_dict()
+    )
+
+    # Classify into three outcome buckets
+    def classify(status):
+        if pd.isna(status):           return 'Unknown'
+        if 'Convergence' in status:   return 'Success'
+        if 'Collision'   in status:   return 'Collision'
+        return 'Max runtime'
+
+    finals['outcome'] = finals['status'].apply(classify)
+
+    outcome_style = {
+        'Success':     ('seagreen', 'o'),
+        'Collision':   ('tomato',   'X'),
+        'Max runtime': ('steelblue','s'),
+        'Unknown':     ('gray',     'o'),
+    }
+
+    arrow_len = 0.2
+
+    fig, ax = plt.subplots(figsize=(10, 9))
+    setup_axis(ax, map_img)
+
+    for outcome, (color, marker) in outcome_style.items():
+        sub = finals[finals['outcome'] == outcome]
+        if len(sub) == 0:
+            continue
+
+        ax.scatter(
+            sub['gt_pose_x'], sub['gt_pose_y'],
+            c=color, s=40, alpha=0.8, marker=marker,
+            zorder=4, label=f'{outcome} (n={len(sub)})'
+        )
+        ax.quiver(
+            sub['gt_pose_x'],
+            sub['gt_pose_y'],
+            arrow_len * np.cos(sub['gt_pose_yaw']),
+            arrow_len * np.sin(sub['gt_pose_yaw']),
+            color=color, alpha=0.5,
+            scale=1, scale_units='xy',
+            width=0.003, headwidth=4,
+            zorder=5
+        )
+
+    ax.set_title(
+        f'Final Positions and Orientations by Outcome\n({len(finals)} runs)',
+        fontsize=13, fontweight='bold'
+    )
+    ax.legend(loc='upper right')
+    plt.tight_layout()
+    out = os.path.join(OUTPUT_DIR, 'final_positions.pdf')
+    plt.savefig(out, dpi=150, bbox_inches='tight')
+    print(f"Saved: {out}")
+    plt.close()
+
 # ─────────────────────────────────────────────
 # ANALYSIS 1 — VISITED POSE HEATMAP
 # ─────────────────────────────────────────────
 
+#Old
+'''
 def plot_position_heatmap(df, map_img):
     x_range, y_range = get_ranges(map_img, df)
     fig, ax = plt.subplots(1, 1, figsize=(8, 7))
@@ -347,6 +494,84 @@ def plot_position_heatmap(df, map_img):
     plt.savefig(out, dpi=150, bbox_inches='tight')
     print(f"Saved: {out}")
     plt.close()
+'''
+
+#New: has fixed vmin and vmax for all heatmaps, so that they can be compared across algorithms and maps.
+def plot_position_heatmap(df, map_img):
+    x_range, y_range = get_ranges(map_img, df)
+    fig, ax = plt.subplots(1, 1, figsize=(7, 7))
+    setup_axis(ax, map_img)
+    
+    h = build_heatmap(df['gt_pose_x'], df['gt_pose_y'], x_range, y_range)
+    draw_heatmap(ax, h, x_range, y_range, 'Visit density')
+    
+    for extra_ax in fig.axes:
+        if extra_ax != ax:
+            extra_ax.remove()
+
+    
+    # 6. INDIVIDUAL TITLES: Labeled on all plots for horizontal identification
+    ax.set_title(
+        algorithm_scientific_dict.get(algorithm),
+        fontsize=12, 
+        fontweight='bold',
+        pad=28  # Increased padding to clear space for the subtitle
+    )
+    # Subtitle: Un-bolded, smaller (9pt), and colored in a clean dark grey
+    ax.text(
+        0.5, 1.03, 
+        f"({len(df):,} steps, {df['run_id'].nunique()} runs)",
+        transform=ax.transAxes, 
+        ha='center', 
+        va='bottom',
+        fontsize=9, 
+        fontweight='normal',
+        color='#444444'
+    )
+    # Font calibration for axis readability
+    ax.tick_params(axis='both', which='major', labelsize=9)
+    ax.xaxis.label.set_size(10)
+    ax.yaxis.label.set_size(10)
+    
+    plt.tight_layout()
+    
+    # Save as high-resolution PNG for seamless Word alignment
+    out = os.path.join(OUTPUT_DIR, f'heatmap_ribbon_{algorithm}.png')
+    plt.savefig(out, dpi=300, bbox_inches='tight')
+    print(f"Saved: {out}")
+    plt.close()
+
+def export_standalone_colorbar(vmin=0, vmax=1, cmap=hot_transparent(), label='Visit density'):
+    """
+    Generates a high-resolution standalone colorbar matching the 
+    exact scaling, limits, and colormap of the thesis heatmaps.
+    """
+    # 1. Create a slim figure profile optimized to fit your Word table cell
+    fig, ax = plt.subplots(figsize=(1.5, 5)) 
+    
+    # 2. Replicate the normalization scaling from your imshow parameters
+    norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    mappable = cm.ScalarMappable(norm=norm, cmap=cmap)
+    
+    # 3. Draw the colorbar (cax=ax maps it perfectly to our custom figure size)
+    cb = fig.colorbar(
+        mappable,
+        cax=ax, 
+        orientation='vertical'
+    )
+    
+    # 4. Apply matching clean typography configurations
+    cb.set_label(label, fontsize=10, fontweight='bold', labelpad=12)
+    cb.ax.tick_params(labelsize=9)
+    
+    plt.tight_layout()
+    
+    # 5. Save as a matching 300 DPI asset
+    out = os.path.join(OUTPUT_DIR, 'heatmap_shared_legend.png')
+    plt.savefig(out, dpi=300, bbox_inches='tight')
+    print(f"Standalone colorbar saved successfully: {out}")
+    plt.close()
+
 
 def plot_gaze_heatmap(df, map_img): # this is the intended next position based on the action and current yaw (not very distinct from the visited pose heatmap)
     x_range, y_range = get_ranges(map_img, df)
@@ -441,10 +666,7 @@ def save_collision_report(csv_dir, output_dir):
     print(f"Saved: {out}")
 
     if len(mid_run_col) > 0:
-        poses_file = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "diff_drive_robot", "config", starting_poses
-        )
+        poses_file = starting_poses
         if os.path.exists(poses_file):
             poses = pd.read_csv(poses_file)
             mid_run_poses = poses.iloc[mid_run_col['pose_index'].values - 1]
@@ -574,10 +796,7 @@ def save_collision_report(csv_dir, output_dir):
     plt.close()
 
         # --- NEW: All collision positions on map ---
-    poses_file = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "diff_drive_robot", "config", starting_poses
-    )
+    poses_file = starting_poses
     if os.path.exists(poses_file) and len(collisions) > 0:
         poses = pd.read_csv(poses_file)
 
@@ -626,7 +845,7 @@ def save_collision_report(csv_dir, output_dir):
         plt.close()
 
     else:
-        print(f"ERROR: Didnt find path for starting poses at: {poses_file}")
+        print(f"Warning: len(collisions) <= 0 or Didnt find path for starting poses at: {poses_file}")
 
 
 # ─────────────────────────────────────────────
@@ -1052,7 +1271,8 @@ def save_run_statistics(df, csv_dir, output_dir):
     """
     Per-run statistics txt report. Excludes step-0 collision runs entirely.
     Covers:
-      - Steps per run (min, max, mean)
+      - Steps per run (min, max, mean) — all valid runs
+      - Steps per run (converged runs only) — true/false success
       - Bimodal resolution time (steps spent in bimodal belief per run)
       - Success breakdown:
           * True success:    converged + low pos & rot error
@@ -1064,7 +1284,7 @@ def save_run_statistics(df, csv_dir, output_dir):
     valid_summary = load_valid_summary(csv_dir)
 
     # ── Per-run step counts from df ──────────────────────────────────────
-    steps_per_run = df.groupby('run_id')['step'].count()
+    steps_per_run = df.groupby('run_id')['step'].max()  # .max() not .count() — step 0 is initial log, not a movement
 
     bimodal_per_run = (df[df['is_bimodal'] == 1.0]
                        .groupby('run_id')['step'].count())
@@ -1082,7 +1302,6 @@ def save_run_statistics(df, csv_dir, output_dir):
 
         if 'SUCCESS: Convergence reached' in status:
             run_id   = row.get('pose_index', -1) - 1  # pose_index is 1-based
-            # Look up final errors from the step data
             if run_id in final_per_run.index:
                 pos_err = final_per_run.loc[run_id, 'position_error']
                 rot_err = final_per_run.loc[run_id, 'rotational_error']
@@ -1091,10 +1310,10 @@ def save_run_statistics(df, csv_dir, output_dir):
                         return 'true_success'
                     else:
                         return 'false_success'
-            return 'false_success'  # no error data available, assume ok
+            return 'false_success'
 
         if 'FAILURE: Max runtime exceeded' in status:
-            return 'timeout' 
+            return 'timeout'
 
         return 'other_failure'
 
@@ -1107,6 +1326,10 @@ def save_run_statistics(df, csv_dir, output_dir):
     mid_collision   = (valid_summary['outcome'] == 'mid_run_collision').sum()
     timeout         = (valid_summary['outcome'] == 'timeout').sum()
     other           = (valid_summary['outcome'] == 'other_failure').sum()
+
+    # ── Converged-only steps from summary (with -1 correction) ───────────
+    converged_mask  = valid_summary['outcome'].isin(['true_success', 'false_success'])
+    converged_steps = valid_summary.loc[converged_mask, 'steps'] - 1  # summary overcounts by 1
 
     def pct(n): return 100 * n / total if total > 0 else 0.0
 
@@ -1122,8 +1345,8 @@ def save_run_statistics(df, csv_dir, output_dir):
         f.write('(Step-0 collision runs excluded from all statistics)\n')
         f.write('='*65 + '\n\n')
 
-        # ── Step statistics ──────────────────────────────────────────────
-        f.write('STEPS PER RUN\n')
+        # ── Step statistics — all valid runs ─────────────────────────────
+        f.write('STEPS PER RUN (all valid runs)\n')
         f.write('-'*40 + '\n')
         f.write(f'  Total valid runs : {total}\n')
         f.write(f'  Min steps        : {int(steps_per_run.min())}\n')
@@ -1131,6 +1354,19 @@ def save_run_statistics(df, csv_dir, output_dir):
         f.write(f'  Mean steps       : {steps_per_run.mean():.2f}\n')
         f.write(f'  Median steps     : {steps_per_run.median():.1f}\n')
         f.write(f'  Std steps        : {steps_per_run.std():.2f}\n\n')
+
+        # ── Step statistics — converged runs only ─────────────────────────
+        f.write('STEPS PER RUN (converged runs only — true & false success)\n')
+        f.write('-'*40 + '\n')
+        if len(converged_steps) == 0:
+            f.write('  No converged runs found.\n\n')
+        else:
+            f.write(f'  Converged runs   : {len(converged_steps)}\n')
+            f.write(f'  Min steps        : {int(converged_steps.min())}\n')
+            f.write(f'  Max steps        : {int(converged_steps.max())}\n')
+            f.write(f'  Mean steps       : {converged_steps.mean():.2f}\n')
+            f.write(f'  Median steps     : {converged_steps.median():.1f}\n')
+            f.write(f'  Std steps        : {converged_steps.std():.2f}\n\n')
 
         # ── Bimodal resolution ───────────────────────────────────────────
         f.write('BIMODAL BELIEF DURATION\n')
@@ -1161,7 +1397,7 @@ def save_run_statistics(df, csv_dir, output_dir):
         f.write(f'  ─────────────────────────────\n')
         f.write(f'  Total                 : {total:>4}\n\n')
 
-        # ── Error distribution for successful runs ───────────────────────
+        # ── Error distribution for converged runs ────────────────────────
         success_runs = final_per_run[
             final_per_run.index.isin(
                 valid_summary[valid_summary['outcome'].isin(
@@ -1184,15 +1420,13 @@ def save_run_statistics(df, csv_dir, output_dir):
             f.write(f'    Min    : {success_runs["rotational_error"].min():.4f} rad\n')
             f.write(f'    Max    : {success_runs["rotational_error"].max():.4f} rad\n\n')
 
-        # ── Rotational error distribution analysis ───────────────────
+        # ── Rotational error distribution analysis ───────────────────────
         f.write('ROTATIONAL ERROR DEEP DIVE\n')
         f.write('-'*40 + '\n')
 
         all_final = df.sort_values('step').groupby('run_id').last()
-
         rot_errors = all_final['rotational_error'].dropna()
 
-        # Bin into brackets to see distribution shape
         brackets = [
             (0.0,  0.1,  'Excellent  (< 0.1 rad  / ~6°)'),
             (0.1,  0.3,  'Good       (0.1–0.3 rad / ~6–17°)'),
@@ -1209,21 +1443,18 @@ def save_run_statistics(df, csv_dir, output_dir):
             bar = '█' * int(30 * n / total_rot) if total_rot > 0 else ''
             f.write(f'  {label:<40} : {n:>4} ({100*n/total_rot:5.1f}%)  {bar}\n')
 
-        # Check for ~pi clustering — strong sign of 180° flip / symmetric confusion
         near_pi = ((rot_errors >= 2.8) & (rot_errors <= 3.15)).sum()
         near_pi_pct = 100 * near_pi / total_rot if total_rot > 0 else 0
         f.write(f'\n  Near-180° flips (2.8–3.15 rad) : {near_pi} ({near_pi_pct:.1f}%)\n')
         if near_pi_pct > 10:
             f.write(f'  *** HIGH: algorithm is converging on symmetric/flipped hypothesis\n')
 
-        # Check for ~pi/2 clustering — sign of 90° map confusion
         near_half_pi = ((rot_errors >= 1.4) & (rot_errors <= 1.7)).sum()
         near_half_pi_pct = 100 * near_half_pi / total_rot if total_rot > 0 else 0
         f.write(f'  Near-90° errors  (1.4–1.7 rad) : {near_half_pi} ({near_half_pi_pct:.1f}%)\n')
         if near_half_pi_pct > 10:
             f.write(f'  *** HIGH: algorithm is confusing perpendicular corridors\n')
 
-        # Distribution over all steps — not just final — to see if it improves over time
         f.write(f'\n  Rotational error over all steps (not just final):\n')
         all_rot = df['rotational_error'].dropna()
         f.write(f'    Mean   : {all_rot.mean():.4f} rad\n')
@@ -1234,7 +1465,6 @@ def save_run_statistics(df, csv_dir, output_dir):
         f.write(f'    > 2.0 rad : {(all_rot > 2.0).sum():>5} steps '
                 f'({100*(all_rot > 2.0).mean():.1f}% of all steps)\n\n')
 
-        # Compare true success vs false success rot error
         true_ids  = valid_summary[valid_summary['outcome'] == 'true_success']['pose_index'] - 1
         false_ids = valid_summary[valid_summary['outcome'] == 'false_success']['pose_index'] - 1
 
@@ -1247,8 +1477,7 @@ def save_run_statistics(df, csv_dir, output_dir):
         f.write(f'  Rot error — false success runs:\n')
         f.write(f'    Mean: {false_rot.mean():.4f} rad  |  '
                 f'Median: {false_rot.median():.4f} rad\n\n')
-        
-        
+
         # ── False success detail ─────────────────────────────────────────
         if false_success > 0:
             false_runs = valid_summary[valid_summary['outcome'] == 'false_success']
@@ -1266,12 +1495,41 @@ def save_run_statistics(df, csv_dir, output_dir):
     print(f"Saved: {out}")
 
 # ─────────────────────────────────────────────
+# ANALYSIS 6 — MASTER TIME-SERIES EXPORT (csv)
+# ─────────────────────────────────────────────
+
+def save_master_time_series(df, output_dir):
+    """
+    Consolidates the loaded time-series data from all individual trial files 
+    and exports it as a single long-format master dataset for R plotting.
+    
+    """
+    # Core tracking metrics for entropy/particle dynamics
+    core_metrics = ['run_id', 'step', 'shannon_entropy', 'spatial_entropy', 'num_particles']
+    remaining_cols = [col for col in df.columns if col not in core_metrics]
+    
+    # Reorder columns to push target R metrics right to the front
+    master_df = df[core_metrics + remaining_cols]
+    
+   # Build output path within the output directory (OUTPUT_DIR)
+    master_filename = f"master_timeseries_{map_name}_{seconds_per_step}s_{algorithm}.csv"
+    out = os.path.join(output_dir, master_filename)
+    
+    # Export to disk
+    master_df.to_csv(out, index=False)
+    print(f"Saved: {out}")
+
+# ─────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────
 
 def main():
     print("Loading CSVs...")
     df = load_all_csvs(CSV_DIR)
+
+    print("\nSaving master time-series for R...")
+    save_master_time_series(df, OUTPUT_DIR)
+
     print("Loading map...")
     map_img = load_map(MAP_PATH)
     if map_img is not None:
@@ -1291,8 +1549,21 @@ def main():
     print("\nPlotting starting positions...")
     plot_starting_positions(df, map_img)
     
+    print("\nPlotting final positions...")
+    plot_final_positions(df, map_img)
+
+    
     print("\nPlotting position heatmap...")
     plot_position_heatmap(df, map_img)
+
+    # Call the function once to get your asset
+    print("\nPlotting position heatmap standalone colorbar ...")
+    export_standalone_colorbar(
+        vmin=GLOBAL_VMIN, 
+        vmax=GLOBAL_VMAX, 
+        cmap=hot_transparent(), 
+        label='Visit density'
+    )
 
     print("\nPlotting gaze heatmap...")
     plot_gaze_heatmap(df, map_img)
