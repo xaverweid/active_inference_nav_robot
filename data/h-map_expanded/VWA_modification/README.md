@@ -1,1 +1,1 @@
-Expanded H-Map with the VWA-modificated AIC algorithms
+Expanded H-Map with the VWA- and Gamma-modificated AIC algorithms
