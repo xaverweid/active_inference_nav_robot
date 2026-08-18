@@ -1,0 +1,126 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2870
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 TIMEOUT ANALYSIS: H-MAP EXPANDED (INCLUDING VWA VARIANTS)\
+> cat("========================================================\\n")\
+========================================================\
+> pairs_timeout_expanded <- emmeans(model_timeout_expanded, pairwise ~ Algorithm, type = "response")\
+> print(pairs_timeout_expanded$emmeans)  \
+ Algorithm           prob     SE  df asymp.LCL asymp.UCL\
+ Standard AIC       0.438 0.0439 Inf     0.355     0.525\
+ VWA Standard AIC   0.722 0.0344 Inf     0.650     0.784\
+ Deep AIC           0.330 0.0378 Inf     0.261     0.408\
+ VWA Deep AIC       0.624 0.0360 Inf     0.551     0.691\
+ Constrained Random 0.754 0.0305 Inf     0.689     0.808\
+\
+Confidence level used: 0.95 \
+Intervals are back-transformed from the logit scale \
+> print(pairs_timeout_expanded$contrasts)\
+ contrast                              odds.ratio     SE  df null z.ratio p.value\
+ Standard AIC / VWA Standard AIC            0.300 0.0741 Inf    1  -4.876 <0.0001\
+ Standard AIC / Deep AIC                    1.581 0.3900 Inf    1   1.857  0.3410\
+ Standard AIC / VWA Deep AIC                0.470 0.1110 Inf    1  -3.208  0.0117\
+ Standard AIC / Constrained Random          0.255 0.0617 Inf    1  -5.647 <0.0001\
+ VWA Standard AIC / Deep AIC                5.276 1.2800 Inf    1   6.876 <0.0001\
+ VWA Standard AIC / VWA Deep AIC            1.569 0.3610 Inf    1   1.960  0.2860\
+ VWA Standard AIC / Constrained Random      0.850 0.2010 Inf    1  -0.688  0.9592\
+ Deep AIC / VWA Deep AIC                    0.297 0.0683 Inf    1  -5.281 <0.0001\
+ Deep AIC / Constrained Random              0.161 0.0381 Inf    1  -7.710 <0.0001\
+ VWA Deep AIC / Constrained Random          0.541 0.1220 Inf    1  -2.731  0.0495\
+\
+P value adjustment: tukey method for comparing a family of 5 estimates \
+Tests are performed on the log odds ratio scale \
+\
+PRECISION ANALYSIS: H-MAP EXPANDED (INCLUDING VWA VARIANTS)\
+> cat("========================================================\\n")\
+========================================================\
+> pairs_precision_expanded <- emmeans(model_precision_expanded, pairwise ~ Algorithm, type = "response")\
+> print(pairs_precision_expanded$emmeans)  \
+ Algorithm           prob     SE  df asymp.LCL asymp.UCL\
+ Standard AIC       0.637 0.0567 Inf     0.520     0.739\
+ VWA Standard AIC   0.427 0.0722 Inf     0.295     0.571\
+ Deep AIC           0.633 0.0473 Inf     0.537     0.720\
+ VWA Deep AIC       0.616 0.0590 Inf     0.496     0.723\
+ Constrained Random 0.510 0.0714 Inf     0.373     0.646\
+\
+Confidence level used: 0.95 \
+Intervals are back-transformed from the logit scale \
+> print(pairs_precision_expanded$contrasts)\
+ contrast                              odds.ratio    SE  df null z.ratio p.value\
+ Standard AIC / VWA Standard AIC            2.354 0.903 Inf    1   2.233  0.1676\
+ Standard AIC / Deep AIC                    1.016 0.324 Inf    1   0.049  1.0000\
+ Standard AIC / VWA Deep AIC                1.094 0.383 Inf    1   0.257  0.9990\
+ Standard AIC / Constrained Random          1.686 0.635 Inf    1   1.387  0.6358\
+ VWA Standard AIC / Deep AIC                0.432 0.155 Inf    1  -2.345  0.1307\
+ VWA Standard AIC / VWA Deep AIC            0.465 0.179 Inf    1  -1.984  0.2738\
+ VWA Standard AIC / Constrained Random      0.716 0.294 Inf    1  -0.813  0.9268\
+ Deep AIC / VWA Deep AIC                    1.077 0.347 Inf    1   0.231  0.9994\
+ Deep AIC / Constrained Random              1.660 0.582 Inf    1   1.444  0.5991\
+ VWA Deep AIC / Constrained Random          1.541 0.584 Inf    1   1.140  0.7852\
+\
+P value adjustment: tukey method for comparing a family of 5 estimates \
+Tests are performed on the log odds ratio scale \
+\
+\
+COLLISION ANALYSIS: ACTIVE INFERENCE HEAD-TO-HEAD (4 VARIANTS)\
+> cat("========================================================\\n")\
+========================================================\
+> pairs_collision_aic <- emmeans(model_collision_aic, pairwise ~ Algorithm, type = "response")\
+> print(pairs_collision_aic$emmeans)  \
+ Algorithm         prob     SE  df asymp.LCL asymp.UCL\
+ Standard AIC     0.361 0.0340 Inf     0.297     0.430\
+ VWA Standard AIC 0.152 0.0254 Inf     0.108     0.208\
+ Deep AIC         0.226 0.0296 Inf     0.174     0.290\
+ VWA Deep AIC     0.097 0.0209 Inf     0.063     0.146\
+\
+Confidence level used: 0.95 \
+Intervals are back-transformed from the logit scale \
+> print(pairs_collision_aic$contrasts)\
+ contrast                        odds.ratio    SE  df null z.ratio p.value\
+ Standard AIC / VWA Standard AIC      3.154 0.776 Inf    1   4.669 <0.0001\
+ Standard AIC / Deep AIC              1.928 0.432 Inf    1   2.930  0.0179\
+ Standard AIC / VWA Deep AIC          5.251 1.470 Inf    1   5.910 <0.0001\
+ VWA Standard AIC / Deep AIC          0.611 0.159 Inf    1  -1.895  0.2299\
+ VWA Standard AIC / VWA Deep AIC      1.665 0.516 Inf    1   1.646  0.3527\
+ Deep AIC / VWA Deep AIC              2.723 0.797 Inf    1   3.424  0.0035\
+\
+P value adjustment: tukey method for comparing a family of 4 estimates \
+Tests are performed on the log odds ratio scale \
+\
+> speed_model_expanded <- lm(Total_Steps ~ Algorithm, data = raw_speed_data_filtered)\
+> speed_comparisons_expanded <- emmeans(speed_model_expanded, pairwise ~ Algorithm, adjust = "tukey")\
+> \
+> cat("\\n--- Estimated Mean Operational Steps (True Success Only) ---\\n")\
+\
+--- Estimated Mean Operational Steps (True Success Only) ---\
+> print(speed_comparisons_expanded$emmeans)\
+ Algorithm          emmean    SE  df lower.CL upper.CL\
+ Standard AIC         19.4 0.903 194     17.6     21.2\
+ VWA Standard AIC     19.9 1.370 194     17.3     22.6\
+ Deep AIC             18.6 0.754 194     17.1     20.1\
+ VWA Deep AIC         22.5 0.945 194     20.6     24.4\
+ Constrained Random   20.0 1.220 194     17.6     22.4\
+\
+Confidence level used: 0.95 \
+> \
+> cat("\\n--- Pairwise Contrast Matrices (Tukey-Adjusted p-values) ---\\n")\
+\
+--- Pairwise Contrast Matrices (Tukey-Adjusted p-values) ---\
+> print(speed_comparisons_expanded$contrasts)\
+ contrast                              estimate   SE  df t.ratio p.value\
+ Standard AIC - VWA Standard AIC         -0.537 1.64 194  -0.327  0.9975\
+ Standard AIC - Deep AIC                  0.837 1.18 194   0.712  0.9535\
+ Standard AIC - VWA Deep AIC             -3.087 1.31 194  -2.363  0.1302\
+ Standard AIC - Constrained Random       -0.587 1.52 194  -0.386  0.9953\
+ VWA Standard AIC - Deep AIC              1.374 1.56 194   0.879  0.9042\
+ VWA Standard AIC - VWA Deep AIC         -2.550 1.66 194  -1.533  0.5422\
+ VWA Standard AIC - Constrained Random   -0.050 1.84 194  -0.027  1.0000\
+ Deep AIC - VWA Deep AIC                 -3.924 1.21 194  -3.248  0.0118\
+ Deep AIC - Constrained Random           -1.424 1.44 194  -0.991  0.8593\
+ VWA Deep AIC - Constrained Random        2.500 1.55 194   1.617  0.4886\
+\
+P value adjustment: tukey method for comparing a family of 5 estimates }

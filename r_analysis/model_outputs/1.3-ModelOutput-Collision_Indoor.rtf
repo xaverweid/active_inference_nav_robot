@@ -1,0 +1,164 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2870
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 > library(ggplot2)\
+> library(tidyr)\
+> library(dplyr)\
+> library(extrafont)\
+> library(emmeans)\
+> library(brglm2)\
+> \
+> # --- STEP 1: INITIALIZE FONTS (For Times New Roman 12pt) ---\
+> # Run font_import(pattern = "Times", prompt = FALSE) once if you haven't before\
+> loadfonts(device = "pdf", quiet = TRUE)\
+> # --- STEP 2: ASSIGN EXISTING DATA FRAMES ---\
+> # Mapping your pre-imported environment objects\
+> df_IndoorMap_1s_raw <- IndoorMap_1s\
+> df_IndoorMap_5s_raw <- IndoorMap_5s\
+> \
+> # Dynamically force the first column name to "Metric" regardless of its current name\
+> colnames(df_IndoorMap_1s_raw)[1] <- "Metric"\
+> colnames(df_IndoorMap_5s_raw)[1] <- "Metric"\
+> \
+> \
+> # --- STEP 3: TRANSFORM WIDE TO LONG FORMAT ---\
+> IndoorMap_process_dataset <- function(df, duration_label) \{\
++   df %>%\
++     # Clean string spacing/capitalization discrepancies if they exist\
++     mutate(Metric = trimws(tolower(Metric))) %>%\
++     \
++     # Filter out only the 5 Metric categories needed for the stacked bars\
++     # (Adjust strings here if your rows use slightly different naming)\
++     filter(Metric %in% c("true success", "false success", "collision", "timeout", "other failure")) %>%\
++     \
++     # Pivot the 7 algorithm columns into a single long column\
++     pivot_longer(cols = -Metric, names_to = "Algorithm", values_to = "Count") %>%\
++     \
++     # Label the duration group\
++     mutate(Duration = duration_label)\
++ \}\
+> \
+> # Run the transformation pipeline\
+> cleaned_IndoorMap_1s <- IndoorMap_process_dataset(df_IndoorMap_1s_raw, "1s Duration")\
+> cleaned_IndoorMap_5s <- IndoorMap_process_dataset(df_IndoorMap_5s_raw, "5s Duration")\
+> plot_data_IndoorMap  <- bind_rows(cleaned_IndoorMap_1s, cleaned_IndoorMap_5s)\
+> \
+> # --- STEP 4: STANDARDIZE LABELS & LAYER ORDER (UPDATED) ---\
+> # Capture the exact column order of your algorithms from the original dataset\
+> # (We use [-1] to skip the first column, which is the "Metric" column)\
+> original_algo_order_IndoorMap <- colnames(IndoorMap_1s)[-1]\
+> \
+> plot_data_IndoorMap <- plot_data_IndoorMap %>%\
++   mutate(\
++     Metric = case_when(\
++       Metric == "true success"   ~ "True Success",\
++       Metric == "false success"  ~ "False Success",\
++       Metric == "collision"      ~ "Collision",\
++       Metric == "timeout"        ~ "Timeout",\
++       Metric == "other failure"  ~ "Other Failure",\
++       TRUE                       ~ Metric\
++     ),\
++     # 1. Enforce the exact dataset column order for the X-axis\
++     Algorithm = factor(Algorithm, levels = original_algo_order_IndoorMap),\
++     \
++     # 2. Sets the visual stack ordering from bottom to top\
++     Metric = factor(Metric, levels = c("Other Failure", "Timeout", "Collision", "False Success", "True Success"))\
++   )\
+> \
+> \
+> # ==========================================\
+> # ==========================================\
+> # ==========================================\
+> # ==========================================\
+> \
+> # Collision Analysis\
+> # ==========================================\
+> \
+> # 1. Filter out Hard Coded Safety Safety Constraint (D-Opt and Constrained Random)  runs to level the playing field\
+> df_coll_indoor <- subset(plot_data_IndoorMap, \
++                         Metric %in% c("True Success", "False Success", "Collision", "Timeout") & \
++                           Algorithm %in% c("Standard AIC", \
++                                            "Deep AIC", \
++                                            "Full-Distribution AIC",\
++                                            "Purely Epistemic AIC", \
++                                            "Unconstrained Random"))\
+> \
+> \
+> # Step 2: Code the binary dependent variable\
+> df_coll_indoor$Is_Collision <- ifelse(df_coll_indoor$Metric == "Collision", 1, 0)\
+> \
+> # --- INDOOR 1s DURATION ---\
+> df_indoor_1s <- subset(df_coll_indoor, Duration == "1s Duration")\
+> \
+> model_indoor_1s <- glm(Is_Collision ~ Algorithm, \
++                        data = df_indoor_1s, \
++                        weights = Count, \
++                        family = binomial,\
++                        method = "brglmFit") # <- Handles 0 counts cleanly\
+> \
+> pairs_indoor_1s <- emmeans(model_indoor_1s, pairwise ~ Algorithm, type = "response")\
+> print(pairs_indoor_1s$emmeans)\
+ Algorithm                prob      SE  df asymp.LCL asymp.UCL\
+ Standard AIC          0.01485 0.01210 Inf  0.002973    0.0708\
+ Purely Epistemic AIC  0.15347 0.03600 Inf  0.095224    0.2380\
+ Deep AIC              0.00495 0.00702 Inf  0.000305    0.0751\
+ Full-Distribution AIC 0.01485 0.01210 Inf  0.002973    0.0708\
+ Unconstrained Random  0.42500 0.04970 Inf  0.331645    0.5240\
+\
+Confidence level used: 0.95 \
+Intervals are back-transformed from the logit scale \
+> print(pairs_indoor_1s$contrasts)\
+ contrast                                       odds.ratio       SE  df null z.ratio p.value\
+ Standard AIC / Purely Epistemic AIC               0.08316  0.07250 Inf    1  -2.852  0.0352\
+ Standard AIC / Deep AIC                           3.03015  4.99000 Inf    1   0.673  0.9622\
+ Standard AIC / (Full-Distribution AIC)            1.00000  1.17000 Inf    1   0.000  1.0000\
+ Standard AIC / Unconstrained Random               0.02040  0.01740 Inf    1  -4.572 <0.0001\
+ Purely Epistemic AIC / Deep AIC                  36.43860 52.90000 Inf    1   2.477  0.0958\
+ Purely Epistemic AIC / (Full-Distribution AIC)   12.02534 10.50000 Inf    1   2.852  0.0352\
+ Purely Epistemic AIC / Unconstrained Random       0.24527  0.08440 Inf    1  -4.086  0.0004\
+ Deep AIC / (Full-Distribution AIC)                0.33002  0.54400 Inf    1  -0.673  0.9622\
+ Deep AIC / Unconstrained Random                   0.00673  0.00969 Inf    1  -3.475  0.0047\
+ (Full-Distribution AIC) / Unconstrained Random    0.02040  0.01740 Inf    1  -4.572 <0.0001\
+\
+P value adjustment: tukey method for comparing a family of 5 estimates \
+Tests are performed on the log odds ratio scale \
+> \
+> # --- INDOOR 5s DURATION ---\
+> df_indoor_5s <- subset(df_coll_indoor, Duration == "5s Duration")\
+> \
+> model_indoor_5s <- glm(Is_Collision ~ Algorithm, \
++                        data = df_indoor_5s, \
++                        weights = Count, \
++                        family = binomial,\
++                        method = "brglmFit") # <- Handles 0 counts cleanly\
+> \
+> pairs_indoor_5s <- emmeans(model_indoor_5s, pairwise ~ Algorithm, type = "response")\
+> print(pairs_indoor_5s$emmeans)\
+ Algorithm                prob      SE  df asymp.LCL asymp.UCL\
+ Standard AIC          0.01485 0.01210 Inf  0.002973    0.0708\
+ Purely Epistemic AIC  0.42079 0.04940 Inf  0.328158    0.5194\
+ Deep AIC              0.01485 0.01210 Inf  0.002973    0.0708\
+ Full-Distribution AIC 0.00495 0.00702 Inf  0.000305    0.0751\
+ Unconstrained Random  0.58911 0.04920 Inf  0.490479    0.6811\
+\
+Confidence level used: 0.95 \
+Intervals are back-transformed from the logit scale \
+> print(pairs_indoor_5s$contrasts)\
+ contrast                                       odds.ratio       SE  df null z.ratio p.value\
+ Standard AIC / Purely Epistemic AIC              2.08e-02 1.77e-02 Inf    1  -4.553 <0.0001\
+ Standard AIC / Deep AIC                          1.00e+00 1.17e+00 Inf    1   0.000  1.0000\
+ Standard AIC / (Full-Distribution AIC)           3.03e+00 4.99e+00 Inf    1   0.673  0.9622\
+ Standard AIC / Unconstrained Random              1.05e-02 8.95e-03 Inf    1  -5.350 <0.0001\
+ Purely Epistemic AIC / Deep AIC                  4.82e+01 4.10e+01 Inf    1   4.553 <0.0001\
+ Purely Epistemic AIC / (Full-Distribution AIC)   1.46e+02 2.10e+02 Inf    1   3.463  0.0049\
+ Purely Epistemic AIC / Unconstrained Random      5.07e-01 1.45e-01 Inf    1  -2.369  0.1238\
+ Deep AIC / (Full-Distribution AIC)               3.03e+00 4.99e+00 Inf    1   0.673  0.9622\
+ Deep AIC / Unconstrained Random                  1.05e-02 8.95e-03 Inf    1  -5.350 <0.0001\
+ (Full-Distribution AIC) / Unconstrained Random   3.47e-03 4.99e-03 Inf    1  -3.935  0.0008\
+\
+P value adjustment: tukey method for comparing a family of 5 estimates \
+Tests are performed on the log odds ratio scale }

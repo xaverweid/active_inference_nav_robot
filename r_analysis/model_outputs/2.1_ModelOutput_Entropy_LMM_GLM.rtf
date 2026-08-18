@@ -1,0 +1,335 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2870
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww30040\viewh16680\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 > # \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+> # SECTION 1: LINEAR MIXED MODELS (TRAJECTORY DECAY RATES)\
+> # \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+> \
+> cat("--- 1. LMM: SHANNON ENTROPY DECAY RATE (INDOOR MAP - 1s) ---\\n")\
+--- 1. LMM: SHANNON ENTROPY DECAY RATE (INDOOR MAP - 1s) ---\
+> print(summary(lmer_shannon_indoor_1s))\
+Linear mixed model fit by REML. t-tests use Satterthwaite's method ['lmerModLmerTest']\
+Formula: shannon_entropy ~ log(step + 1) * Algorithm + (1 | run_id)\
+   Data: subset(lmm_indoor, Duration == "1s")\
+\
+REML criterion at convergence: 34171.1\
+\
+Scaled residuals: \
+     Min       1Q   Median       3Q      Max \
+-2.71485 -0.80198  0.04057  0.80654  2.53408 \
+\
+Random effects:\
+ Groups   Name        Variance Std.Dev.\
+ run_id   (Intercept) 0.09126  0.3021  \
+ Residual             0.42246  0.6500  \
+Number of obs: 17077, groups:  run_id, 100\
+\
+Fixed effects:\
+                                               Estimate Std. Error         df t value Pr(>|t|)    \
+(Intercept)                                   9.046e+00  4.641e-02  5.103e+02 194.920  < 2e-16 ***\
+log(step + 1)                                -6.368e-01  1.304e-02  1.704e+04 -48.831  < 2e-16 ***\
+AlgorithmDeep AIC                             3.745e-01  5.250e-02  1.699e+04   7.133 1.02e-12 ***\
+AlgorithmFull-Distribution AIC                3.302e-01  5.180e-02  1.699e+04   6.375 1.87e-10 ***\
+AlgorithmPurely Epistemic AIC                 2.698e-01  5.375e-02  1.699e+04   5.019 5.24e-07 ***\
+AlgorithmD-Optimality                        -1.693e-01  4.780e-02  1.700e+04  -3.543 0.000397 ***\
+AlgorithmConstrained Random                  -8.047e-02  4.792e-02  1.700e+04  -1.679 0.093172 .  \
+log(step + 1):AlgorithmDeep AIC              -1.988e-01  2.034e-02  1.700e+04  -9.777  < 2e-16 ***\
+log(step + 1):AlgorithmFull-Distribution AIC -1.563e-01  1.983e-02  1.701e+04  -7.886 3.31e-15 ***\
+log(step + 1):AlgorithmPurely Epistemic AIC  -1.683e-01  2.037e-02  1.700e+04  -8.259  < 2e-16 ***\
+log(step + 1):AlgorithmD-Optimality           1.260e-01  1.649e-02  1.703e+04   7.638 2.33e-14 ***\
+log(step + 1):AlgorithmConstrained Random     1.184e-01  1.670e-02  1.703e+04   7.091 1.39e-12 ***\
+---\
+Signif. codes:  0 \'91***\'92 0.001 \'91**\'92 0.01 \'91*\'92 0.05 \'91.\'92 0.1 \'91 \'92 1\
+\
+Correlation of Fixed Effects:\
+            (Intr) lg(+1) AlDAIC AF-DAI APEAIC AlgD-O AlgrCR l(+1):ADA l(+1):AFA l(+1EA l(+1):\
+log(step+1) -0.708                                                                            \
+AlgrthmDAIC -0.507  0.620                                                                     \
+AlgrtF-DAIC -0.514  0.629  0.456                                                              \
+AlgrthPEAIC -0.494  0.605  0.438  0.443                                                       \
+AlgrthmD-Op -0.555  0.678  0.490  0.498  0.478                                                \
+AlgrthmCnsR -0.552  0.675  0.488  0.499  0.474  0.537                                         \
+l(+1):ADAIC  0.450 -0.632 -0.934 -0.405 -0.390 -0.434 -0.432                                  \
+l(+1):AF-DA  0.463 -0.652 -0.411 -0.933 -0.399 -0.449 -0.452  0.420                           \
+l(+1):APEAI  0.447 -0.628 -0.397 -0.401 -0.935 -0.433 -0.428  0.406     0.415                 \
+lg(+1):AD-O  0.556 -0.781 -0.488 -0.497 -0.478 -0.931 -0.534  0.496     0.515     0.497       \
+lg(+1):AlCR  0.546 -0.769 -0.481 -0.494 -0.467 -0.528 -0.932  0.490     0.515     0.486  0.607\
+> \
+> cat("\\n--- 2. LMM: SHANNON ENTROPY DECAY RATE (INDOOR MAP - 5s) ---\\n")\
+\
+--- 2. LMM: SHANNON ENTROPY DECAY RATE (INDOOR MAP - 5s) ---\
+> print(summary(lmer_shannon_indoor_5s))\
+Linear mixed model fit by REML. t-tests use Satterthwaite's method ['lmerModLmerTest']\
+Formula: shannon_entropy ~ log(step + 1) * Algorithm + (1 | run_id)\
+   Data: subset(lmm_indoor, Duration == "5s")\
+\
+REML criterion at convergence: 11458.3\
+\
+Scaled residuals: \
+    Min      1Q  Median      3Q     Max \
+-2.6301 -0.7764 -0.1213  0.7775  2.6993 \
+\
+Random effects:\
+ Groups   Name        Variance Std.Dev.\
+ run_id   (Intercept) 0.05237  0.2288  \
+ Residual             0.42158  0.6493  \
+Number of obs: 5673, groups:  run_id, 100\
+\
+Fixed effects:\
+                                               Estimate Std. Error         df t value Pr(>|t|)    \
+(Intercept)                                     8.98683    0.05397 1818.50743 166.516  < 2e-16 ***\
+log(step + 1)                                  -1.11232    0.02882 5583.76156 -38.601  < 2e-16 ***\
+AlgorithmDeep AIC                               0.00370    0.06948 5567.69388   0.053   0.9575    \
+AlgorithmFull-Distribution AIC                  0.04241    0.06874 5568.56724   0.617   0.5373    \
+AlgorithmPurely Epistemic AIC                  -0.19002    0.08188 5581.49330  -2.321   0.0203 *  \
+AlgorithmD-Optimality                          -0.37511    0.06701 5577.84253  -5.598 2.28e-08 ***\
+AlgorithmConstrained Random                    -0.40934    0.06723 5578.40317  -6.089 1.21e-09 ***\
+log(step + 1):AlgorithmDeep AIC                -0.06276    0.04179 5572.23923  -1.502   0.1331    \
+log(step + 1):AlgorithmFull-Distribution AIC   -0.02292    0.04028 5574.53901  -0.569   0.5694    \
+log(step + 1):AlgorithmPurely Epistemic AIC     0.06081    0.04950 5578.74922   1.228   0.2193    \
+log(step + 1):AlgorithmD-Optimality             0.31485    0.03744 5593.49218   8.409  < 2e-16 ***\
+log(step + 1):AlgorithmConstrained Random       0.35863    0.03765 5604.21405   9.526  < 2e-16 ***\
+---\
+Signif. codes:  0 \'91***\'92 0.001 \'91**\'92 0.01 \'91*\'92 0.05 \'91.\'92 0.1 \'91 \'92 1\
+\
+Correlation of Fixed Effects:\
+            (Intr) lg(+1) AlDAIC AF-DAI APEAIC AlgD-O AlgrCR l(+1):ADA l(+1):AFA l(+1EA l(+1):\
+log(step+1) -0.818                                                                            \
+AlgrthmDAIC -0.636  0.634                                                                     \
+AlgrtF-DAIC -0.643  0.641  0.500                                                              \
+AlgrthPEAIC -0.539  0.536  0.419  0.424                                                       \
+AlgrthmD-Op -0.660  0.658  0.512  0.518  0.435                                                \
+AlgrthmCnsR -0.657  0.656  0.511  0.516  0.432  0.528                                         \
+l(+1):ADAIC  0.563 -0.687 -0.902 -0.442 -0.371 -0.453 -0.453                                  \
+l(+1):AF-DA  0.584 -0.712 -0.454 -0.905 -0.385 -0.471 -0.468  0.491                           \
+l(+1):APEAI  0.474 -0.579 -0.369 -0.372 -0.894 -0.382 -0.380  0.400     0.413                 \
+lg(+1):AD-O  0.629 -0.767 -0.488 -0.494 -0.415 -0.903 -0.503  0.528     0.549     0.445       \
+lg(+1):AlCR  0.627 -0.766 -0.487 -0.491 -0.411 -0.502 -0.901  0.528     0.546     0.443  0.586\
+> \
+> \
+> cat("\\n--- 5. LMM: SHANNON ENTROPY DECAY RATE (H-MAP - 1s) ---\\n")\
+\
+--- 5. LMM: SHANNON ENTROPY DECAY RATE (H-MAP - 1s) ---\
+> print(summary(lmer_shannon_hmap_1s))\
+Linear mixed model fit by REML. t-tests use Satterthwaite's method ['lmerModLmerTest']\
+Formula: shannon_entropy ~ log(step + 1) * Algorithm + (1 | run_id)\
+   Data: subset(lmm_hmap, Duration == "1s")\
+\
+REML criterion at convergence: 38219.7\
+\
+Scaled residuals: \
+     Min       1Q   Median       3Q      Max \
+-3.06518 -0.73996  0.00649  0.75877  2.93976 \
+\
+Random effects:\
+ Groups   Name        Variance Std.Dev.\
+ run_id   (Intercept) 0.1129   0.3361  \
+ Residual             0.3563   0.5969  \
+Number of obs: 20907, groups:  run_id, 95\
+\
+Fixed effects:\
+                                               Estimate Std. Error         df t value Pr(>|t|)    \
+(Intercept)                                   9.153e+00  4.838e-02  3.488e+02 189.194  < 2e-16 ***\
+log(step + 1)                                -6.515e-01  1.072e-02  2.086e+04 -60.771  < 2e-16 ***\
+AlgorithmDeep AIC                            -3.659e-01  4.728e-02  2.084e+04  -7.740 1.04e-14 ***\
+AlgorithmFull-Distribution AIC                2.410e-01  4.746e-02  2.082e+04   5.078 3.84e-07 ***\
+AlgorithmPurely Epistemic AIC                -6.638e-02  5.795e-02  2.083e+04  -1.146 0.251988    \
+AlgorithmD-Optimality                        -3.781e-02  4.778e-02  2.083e+04  -0.791 0.428800    \
+AlgorithmConstrained Random                  -3.256e-01  4.466e-02  2.083e+04  -7.289 3.23e-13 ***\
+log(step + 1):AlgorithmDeep AIC               1.231e-01  1.474e-02  2.086e+04   8.352  < 2e-16 ***\
+log(step + 1):AlgorithmFull-Distribution AIC -5.658e-02  1.459e-02  2.084e+04  -3.878 0.000106 ***\
+log(step + 1):AlgorithmPurely Epistemic AIC   1.660e-02  1.844e-02  2.085e+04   0.900 0.367927    \
+log(step + 1):AlgorithmD-Optimality           1.069e-01  1.444e-02  2.085e+04   7.404 1.37e-13 ***\
+log(step + 1):AlgorithmConstrained Random     2.523e-01  1.355e-02  2.085e+04  18.619  < 2e-16 ***\
+---\
+Signif. codes:  0 \'91***\'92 0.001 \'91**\'92 0.01 \'91*\'92 0.05 \'91.\'92 0.1 \'91 \'92 1\
+\
+Correlation of Fixed Effects:\
+            (Intr) lg(+1) AlDAIC AF-DAI APEAIC AlgD-O AlgrCR l(+1):ADA l(+1):AFA l(+1EA l(+1):\
+log(step+1) -0.663                                                                            \
+AlgrthmDAIC -0.501  0.674                                                                     \
+AlgrtF-DAIC -0.492  0.664  0.504                                                              \
+AlgrthPEAIC -0.405  0.546  0.415  0.412                                                       \
+AlgrthmD-Op -0.491  0.660  0.503  0.501  0.413                                                \
+AlgrthmCnsR -0.527  0.712  0.536  0.532  0.440  0.532                                         \
+l(+1):ADAIC  0.482 -0.726 -0.943 -0.485 -0.398 -0.483 -0.515                                  \
+l(+1):AF-DA  0.479 -0.724 -0.490 -0.945 -0.399 -0.485 -0.519  0.526                           \
+l(+1):APEAI  0.383 -0.576 -0.392 -0.391 -0.940 -0.389 -0.420  0.418     0.422                 \
+lg(+1):AD-O  0.487 -0.735 -0.499 -0.496 -0.408 -0.942 -0.526  0.536     0.540     0.425       \
+lg(+1):AlCR  0.519 -0.786 -0.529 -0.525 -0.434 -0.521 -0.945  0.568     0.575     0.461  0.578\
+> \
+> cat("\\n--- 6. LMM: SHANNON ENTROPY DECAY RATE (H-MAP - 5s) ---\\n")\
+\
+--- 6. LMM: SHANNON ENTROPY DECAY RATE (H-MAP - 5s) ---\
+> print(summary(lmer_shannon_hmap_5s))\
+Linear mixed model fit by REML. t-tests use Satterthwaite's method ['lmerModLmerTest']\
+Formula: shannon_entropy ~ log(step + 1) * Algorithm + (1 | run_id)\
+   Data: subset(lmm_hmap, Duration == "5s")\
+\
+REML criterion at convergence: 9122.1\
+\
+Scaled residuals: \
+    Min      1Q  Median      3Q     Max \
+-3.1877 -0.7375 -0.0473  0.7126  3.0049 \
+\
+Random effects:\
+ Groups   Name        Variance Std.Dev.\
+ run_id   (Intercept) 0.06069  0.2464  \
+ Residual             0.33266  0.5768  \
+Number of obs: 5096, groups:  run_id, 93\
+\
+Fixed effects:\
+                                               Estimate Std. Error         df t value Pr(>|t|)    \
+(Intercept)                                     8.73275    0.05849 1561.35769 149.299  < 2e-16 ***\
+log(step + 1)                                  -0.89942    0.02638 5033.08538 -34.090  < 2e-16 ***\
+AlgorithmDeep AIC                              -0.02386    0.07152 5011.63093  -0.334  0.73867    \
+AlgorithmFull-Distribution AIC                  0.17986    0.07054 5011.93101   2.550  0.01081 *  \
+AlgorithmPurely Epistemic AIC                   0.23404    0.12328 5023.48665   1.898  0.05770 .  \
+AlgorithmD-Optimality                           0.09713    0.07673 5021.61248   1.266  0.20561    \
+AlgorithmConstrained Random                     0.10751    0.06654 5020.74084   1.616  0.10622    \
+log(step + 1):AlgorithmDeep AIC                 0.02298    0.03554 5037.55759   0.647  0.51793    \
+log(step + 1):AlgorithmFull-Distribution AIC   -0.09201    0.03491 5031.56510  -2.636  0.00842 ** \
+log(step + 1):AlgorithmPurely Epistemic AIC    -0.16687    0.06590 5013.94529  -2.532  0.01137 *  \
+log(step + 1):AlgorithmD-Optimality             0.18466    0.03563 5024.24820   5.183 2.27e-07 ***\
+log(step + 1):AlgorithmConstrained Random       0.15855    0.03208 5035.69325   4.943 7.96e-07 ***\
+---\
+Signif. codes:  0 \'91***\'92 0.001 \'91**\'92 0.01 \'91*\'92 0.05 \'91.\'92 0.1 \'91 \'92 1\
+\
+Correlation of Fixed Effects:\
+            (Intr) lg(+1) AlDAIC AF-DAI APEAIC AlgD-O AlgrCR l(+1):ADA l(+1):AFA l(+1EA l(+1):\
+log(step+1) -0.814                                                                            \
+AlgrthmDAIC -0.650  0.658                                                                     \
+AlgrtF-DAIC -0.662  0.669  0.539                                                              \
+AlgrthPEAIC -0.378  0.379  0.308  0.314                                                       \
+AlgrthmD-Op -0.610  0.615  0.494  0.503  0.286                                                \
+AlgrthmCnsR -0.708  0.716  0.572  0.583  0.335  0.536                                         \
+l(+1):ADAIC  0.594 -0.733 -0.906 -0.494 -0.280 -0.453 -0.524                                  \
+l(+1):AF-DA  0.609 -0.753 -0.497 -0.907 -0.285 -0.461 -0.538  0.555                           \
+l(+1):APEAI  0.323 -0.399 -0.263 -0.267 -0.897 -0.246 -0.287  0.293     0.304                 \
+lg(+1):AD-O  0.600 -0.736 -0.489 -0.495 -0.282 -0.908 -0.528  0.544     0.554     0.294       \
+lg(+1):AlCR  0.664 -0.822 -0.540 -0.550 -0.314 -0.506 -0.908  0.604     0.620     0.329  0.606\
+> \
+> \
+> \
+> # \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+> # SECTION 2: GENERAL LINEAR MODELS (TERMINAL ASYMPTOTE FLOORS)\
+> # \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+> \
+> cat("\\n--- 9. GLM: TERMINAL SHANNON ASYMPTOTE FLOOR (INDOOR MAP - 1s) ---\\n")\
+\
+--- 9. GLM: TERMINAL SHANNON ASYMPTOTE FLOOR (INDOOR MAP - 1s) ---\
+> print(summary(glm_shannon_indoor_1s))\
+\
+Call:\
+lm(formula = shannon_entropy ~ Algorithm, data = subset(terminal_indoor, \
+    Duration == "1s"))\
+\
+Residuals:\
+     Min       1Q   Median       3Q      Max \
+-0.26052 -0.12412 -0.07777  0.06338  1.23129 \
+\
+Coefficients:\
+                               Estimate Std. Error t value Pr(>|t|)    \
+(Intercept)                     6.32289    0.02415 261.801  < 2e-16 ***\
+AlgorithmDeep AIC              -0.01788    0.03425  -0.522  0.60178    \
+AlgorithmFull-Distribution AIC -0.05772    0.03425  -1.686  0.09246 .  \
+AlgorithmPurely Epistemic AIC  -0.02851    0.03558  -0.801  0.42331    \
+AlgorithmD-Optimality           0.11420    0.03535   3.230  0.00131 ** \
+AlgorithmConstrained Random     0.09172    0.03492   2.626  0.00888 ** \
+---\
+Signif. codes:  0 \'91***\'92 0.001 \'91**\'92 0.01 \'91*\'92 0.05 \'91.\'92 0.1 \'91 \'92 1\
+\
+Residual standard error: 0.2366 on 534 degrees of freedom\
+Multiple R-squared:  0.0664,	Adjusted R-squared:  0.05766 \
+F-statistic: 7.595 on 5 and 534 DF,  p-value: 6.599e-07\
+\
+> \
+> cat("\\n--- 10. GLM: TERMINAL SHANNON ASYMPTOTE FLOOR (INDOOR MAP - 5s) ---\\n")\
+\
+--- 10. GLM: TERMINAL SHANNON ASYMPTOTE FLOOR (INDOOR MAP - 5s) ---\
+> print(summary(glm_shannon_indoor_5s))\
+\
+Call:\
+lm(formula = shannon_entropy ~ Algorithm, data = subset(terminal_indoor, \
+    Duration == "5s"))\
+\
+Residuals:\
+     Min       1Q   Median       3Q      Max \
+-0.26480 -0.13306 -0.07618  0.01782  1.19204 \
+\
+Coefficients:\
+                               Estimate Std. Error t value Pr(>|t|)    \
+(Intercept)                     6.26530    0.02295 272.990  < 2e-16 ***\
+AlgorithmDeep AIC               0.03765    0.03229   1.166 0.244211    \
+AlgorithmFull-Distribution AIC -0.00712    0.03237  -0.220 0.826005    \
+AlgorithmPurely Epistemic AIC   0.05823    0.03794   1.535 0.125407    \
+AlgorithmD-Optimality           0.11670    0.03272   3.567 0.000394 ***\
+AlgorithmConstrained Random     0.11828    0.03290   3.596 0.000354 ***\
+---\
+Signif. codes:  0 \'91***\'92 0.001 \'91**\'92 0.01 \'91*\'92 0.05 \'91.\'92 0.1 \'91 \'92 1\
+\
+Residual standard error: 0.226 on 530 degrees of freedom\
+Multiple R-squared:  0.04999,	Adjusted R-squared:  0.04103 \
+F-statistic: 5.578 on 5 and 530 DF,  p-value: 5.085e-05\
+\
+> \
+> cat("\\n--- 13. GLM: TERMINAL SHANNON ASYMPTOTE FLOOR (H-MAP - 1s) ---\\n")\
+\
+--- 13. GLM: TERMINAL SHANNON ASYMPTOTE FLOOR (H-MAP - 1s) ---\
+> print(summary(glm_shannon_hmap_1s))\
+\
+Call:\
+lm(formula = shannon_entropy ~ Algorithm, data = subset(terminal_hmap, \
+    Duration == "1s"))\
+\
+Residuals:\
+    Min      1Q  Median      3Q     Max \
+-0.4481 -0.1806 -0.1099  0.1351  1.0818 \
+\
+Coefficients:\
+                               Estimate Std. Error t value Pr(>|t|)    \
+(Intercept)                     6.38661    0.03715 171.899  < 2e-16 ***\
+AlgorithmDeep AIC               0.01062    0.05293   0.201   0.8411    \
+AlgorithmFull-Distribution AIC -0.06013    0.05401  -1.113   0.2663    \
+AlgorithmPurely Epistemic AIC  -0.07085    0.06345  -1.117   0.2649    \
+AlgorithmD-Optimality           0.12369    0.05551   2.228   0.0265 *  \
+AlgorithmConstrained Random     0.23560    0.05165   4.562 6.98e-06 ***\
+---\
+Signif. codes:  0 \'91***\'92 0.001 \'91**\'92 0.01 \'91*\'92 0.05 \'91.\'92 0.1 \'91 \'92 1\
+\
+Residual standard error: 0.3086 on 358 degrees of freedom\
+Multiple R-squared:  0.1144,	Adjusted R-squared:  0.1021 \
+F-statistic: 9.253 on 5 and 358 DF,  p-value: 2.676e-08\
+\
+> \
+> cat("\\n--- 14. GLM: TERMINAL SHANNON ASYMPTOTE FLOOR (H-MAP - 5s) ---\\n")\
+\
+--- 14. GLM: TERMINAL SHANNON ASYMPTOTE FLOOR (H-MAP - 5s) ---\
+> print(summary(glm_shannon_hmap_5s))\
+\
+Call:\
+lm(formula = shannon_entropy ~ Algorithm, data = subset(terminal_hmap, \
+    Duration == "5s"))\
+\
+Residuals:\
+     Min       1Q   Median       3Q      Max \
+-0.33549 -0.15334 -0.04493  0.07580  1.14925 \
+\
+Coefficients:\
+                               Estimate Std. Error t value Pr(>|t|)    \
+(Intercept)                     6.32379    0.03391 186.511  < 2e-16 ***\
+AlgorithmDeep AIC               0.01844    0.04696   0.393 0.694811    \
+AlgorithmFull-Distribution AIC -0.09846    0.04626  -2.128 0.034094 *  \
+AlgorithmPurely Epistemic AIC   0.02411    0.07582   0.318 0.750700    \
+AlgorithmD-Optimality           0.19936    0.05215   3.823 0.000160 ***\
+AlgorithmConstrained Random     0.15627    0.04432   3.526 0.000486 ***\
+---\
+Signif. codes:  0 \'91***\'92 0.001 \'91**\'92 0.01 \'91*\'92 0.05 \'91.\'92 0.1 \'91 \'92 1\
+\
+Residual standard error: 0.2537 on 310 degrees of freedom\
+Multiple R-squared:  0.1474,	Adjusted R-squared:  0.1336 \
+F-statistic: 10.72 on 5 and 310 DF,  p-value: 1.628e-09}

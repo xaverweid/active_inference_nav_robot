@@ -1,0 +1,292 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2870
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 > library(ggplot2)\
+> library(tidyr)\
+> library(dplyr)\
+> library(extrafont)\
+> library(emmeans)\
+> library(brglm2)\
+> \
+> # --- STEP 1: INITIALIZE FONTS (For Times New Roman 12pt) ---\
+> # Run font_import(pattern = "Times", prompt = FALSE) once if you haven't before\
+> loadfonts(device = "pdf", quiet = TRUE)\
+> # --- STEP 2: ASSIGN EXISTING DATA FRAMES ---\
+> # Mapping your pre-imported environment objects\
+> df_IndoorMap_1s_raw <- IndoorMap_1s\
+> df_IndoorMap_5s_raw <- IndoorMap_5s\
+> \
+> # Dynamically force the first column name to "Metric" regardless of its current name\
+> colnames(df_IndoorMap_1s_raw)[1] <- "Metric"\
+> colnames(df_IndoorMap_5s_raw)[1] <- "Metric"\
+> \
+> \
+> # --- STEP 3: TRANSFORM WIDE TO LONG FORMAT ---\
+> IndoorMap_process_dataset <- function(df, duration_label) \{\
++   df %>%\
++     # Clean string spacing/capitalization discrepancies if they exist\
++     mutate(Metric = trimws(tolower(Metric))) %>%\
++     \
++     # Filter out only the 5 Metric categories needed for the stacked bars\
++     # (Adjust strings here if your rows use slightly different naming)\
++     filter(Metric %in% c("true success", "false success", "collision", "timeout", "other failure")) %>%\
++     \
++     # Pivot the 7 algorithm columns into a single long column\
++     pivot_longer(cols = -Metric, names_to = "Algorithm", values_to = "Count") %>%\
++     \
++     # Label the duration group\
++     mutate(Duration = duration_label)\
++ \}\
+> \
+> # Run the transformation pipeline\
+> cleaned_IndoorMap_1s <- IndoorMap_process_dataset(df_IndoorMap_1s_raw, "1s Duration")\
+> cleaned_IndoorMap_5s <- IndoorMap_process_dataset(df_IndoorMap_5s_raw, "5s Duration")\
+> plot_data_IndoorMap  <- bind_rows(cleaned_IndoorMap_1s, cleaned_IndoorMap_5s)\
+> \
+> # --- STEP 4: STANDARDIZE LABELS & LAYER ORDER (UPDATED) ---\
+> # Capture the exact column order of your algorithms from the original dataset\
+> # (We use [-1] to skip the first column, which is the "Metric" column)\
+> original_algo_order_IndoorMap <- colnames(IndoorMap_1s)[-1]\
+> \
+> plot_data_IndoorMap <- plot_data_IndoorMap %>%\
++   mutate(\
++     Metric = case_when(\
++       Metric == "true success"   ~ "True Success",\
++       Metric == "false success"  ~ "False Success",\
++       Metric == "collision"      ~ "Collision",\
++       Metric == "timeout"        ~ "Timeout",\
++       Metric == "other failure"  ~ "Other Failure",\
++       TRUE                       ~ Metric\
++     ),\
++     # 1. Enforce the exact dataset column order for the X-axis\
++     Algorithm = factor(Algorithm, levels = original_algo_order_IndoorMap),\
++     \
++     # 2. Sets the visual stack ordering from bottom to top\
++     Metric = factor(Metric, levels = c("Other Failure", "Timeout", "Collision", "False Success", "True Success"))\
++   )\
+> \
+> \
+> # 1. Filter out collision runs to level the playing field\
+> df_discounted <- subset(plot_data_IndoorMap, \
++                         Metric %in% c("True Success", "False Success", "Timeout") & \
++                           Algorithm %in% c("Standard AIC", \
++                                            "Deep AIC", \
++                                            "Full-Distribution AIC",\
++                                            "Purely Epistemic AIC", \
++                                            "Constrained Random",\
++                                            "D-Optimality"))\
+> \
+> # ==========================================\
+> # ==========================================\
+> # ==========================================\
+> # ==========================================\
+> \
+> # Timeout Analysis\
+> # ==========================================\
+> \
+> \
+> library(emmeans)\
+> library(brglm2) \
+> \
+> # Step 1: Filter metrics and select your 5 algorithms\
+> df_eff_indoor <- subset(df_discounted, \
++                         Metric %in% c("True Success", "False Success", "Timeout") & \
++                           Algorithm %in% c("Standard AIC", "Deep AIC", "Full-Distribution AIC", "Purely Epistemic AIC", "Constrained Random", "D-Optimality"))\
+> \
+> # Step 2: Code the binary dependent variable\
+> df_eff_indoor$Is_Timeout <- ifelse(df_eff_indoor$Metric == "Timeout", 1, 0)\
+> \
+> # --- INDOOR 1s DURATION ---\
+> df_indoor_1s <- subset(df_eff_indoor, Duration == "1s Duration" | Duration == "1s")\
+> \
+> model_indoor_1s <- glm(Is_Timeout ~ Algorithm, \
++                        data = df_indoor_1s, \
++                        weights = Count, \
++                        family = binomial,\
++                        method = "brglmFit") # <- Handles 0 counts cleanly\
+> \
+> pairs_indoor_1s <- emmeans(model_indoor_1s, pairwise ~ Algorithm, type = "response")\
+> print(pairs_indoor_1s$emmeans)\
+ Algorithm                prob      SE  df asymp.LCL asymp.UCL\
+ Standard AIC          0.01500 0.01220 Inf  0.003003    0.0715\
+ Purely Epistemic AIC  0.00581 0.00825 Inf  0.000357    0.0874\
+ Deep AIC              0.02475 0.01550 Inf  0.007137    0.0822\
+ Full-Distribution AIC 0.01500 0.01220 Inf  0.003003    0.0715\
+ D-Optimality          0.05446 0.02270 Inf  0.023704    0.1202\
+ Constrained Random    0.04455 0.02060 Inf  0.017716    0.1076\
+\
+Confidence level used: 0.95 \
+Intervals are back-transformed from the logit scale \
+> print(pairs_indoor_1s$contrasts)\
+ contrast                                       odds.ratio    SE  df null z.ratio p.value\
+ Standard AIC / Purely Epistemic AIC                 2.604 4.290 Inf    1   0.580  0.9923\
+ Standard AIC / Deep AIC                             0.600 0.629 Inf    1  -0.488  0.9966\
+ Standard AIC / (Full-Distribution AIC)              1.000 1.170 Inf    1   0.000  1.0000\
+ Standard AIC / (D-Optimality)                       0.264 0.248 Inf    1  -1.420  0.7150\
+ Standard AIC / Constrained Random                   0.327 0.313 Inf    1  -1.168  0.8523\
+ Purely Epistemic AIC / Deep AIC                     0.230 0.361 Inf    1  -0.938  0.9367\
+ Purely Epistemic AIC / (Full-Distribution AIC)      0.384 0.633 Inf    1  -0.580  0.9923\
+ Purely Epistemic AIC / (D-Optimality)               0.102 0.152 Inf    1  -1.532  0.6436\
+ Purely Epistemic AIC / Constrained Random           0.125 0.189 Inf    1  -1.378  0.7404\
+ Deep AIC / (Full-Distribution AIC)                  1.667 1.750 Inf    1   0.488  0.9966\
+ Deep AIC / (D-Optimality)                           0.441 0.344 Inf    1  -1.050  0.9007\
+ Deep AIC / Constrained Random                       0.544 0.439 Inf    1  -0.755  0.9748\
+ (Full-Distribution AIC) / (D-Optimality)            0.264 0.248 Inf    1  -1.420  0.7150\
+ (Full-Distribution AIC) / Constrained Random        0.327 0.313 Inf    1  -1.168  0.8523\
+ (D-Optimality) / Constrained Random                 1.235 0.809 Inf    1   0.322  0.9995\
+\
+P value adjustment: tukey method for comparing a family of 6 estimates \
+Tests are performed on the log odds ratio scale \
+> \
+> # --- INDOOR 5s DURATION ---\
+> df_indoor_5s <- subset(df_eff_indoor, Duration == "5s Duration" | Duration == "5s")\
+> \
+> model_indoor_5s <- glm(Is_Timeout ~ Algorithm, \
++                        data = df_indoor_5s, \
++                        weights = Count, \
++                        family = binomial,\
++                        method = "brglmFit") # <- Handles 0 counts cleanly\
+> \
+> pairs_indoor_5s <- emmeans(model_indoor_5s, pairwise ~ Algorithm, type = "response")\
+> print(pairs_indoor_5s$emmeans)\
+ Algorithm               prob      SE  df asymp.LCL asymp.UCL\
+ Standard AIC          0.0150 0.01220 Inf  0.003003    0.0715\
+ Purely Epistemic AIC  0.0254 0.02070 Inf  0.005060    0.1180\
+ Deep AIC              0.0050 0.00709 Inf  0.000308    0.0758\
+ Full-Distribution AIC 0.0248 0.01550 Inf  0.007137    0.0822\
+ D-Optimality          0.0450 0.02080 Inf  0.017893    0.1086\
+ Constrained Random    0.0545 0.02270 Inf  0.023704    0.1202\
+\
+Confidence level used: 0.95 \
+Intervals are back-transformed from the logit scale \
+> print(pairs_indoor_5s$contrasts)\
+ contrast                                       odds.ratio    SE  df null z.ratio p.value\
+ Standard AIC / Purely Epistemic AIC                0.5838 0.686 Inf    1  -0.458  0.9975\
+ Standard AIC / Deep AIC                            3.0305 4.990 Inf    1   0.673  0.9849\
+ Standard AIC / (Full-Distribution AIC)             0.6000 0.629 Inf    1  -0.488  0.9966\
+ Standard AIC / (D-Optimality)                      0.3232 0.310 Inf    1  -1.178  0.8473\
+ Standard AIC / Constrained Random                  0.2644 0.248 Inf    1  -1.420  0.7150\
+ Purely Epistemic AIC / Deep AIC                    5.1913 8.570 Inf    1   0.997  0.9189\
+ Purely Epistemic AIC / (Full-Distribution AIC)     1.0278 1.080 Inf    1   0.026  1.0000\
+ Purely Epistemic AIC / (D-Optimality)              0.5536 0.534 Inf    1  -0.613  0.9901\
+ Purely Epistemic AIC / Constrained Random          0.4530 0.427 Inf    1  -0.839  0.9602\
+ Deep AIC / (Full-Distribution AIC)                 0.1980 0.310 Inf    1  -1.036  0.9059\
+ Deep AIC / (D-Optimality)                          0.1066 0.161 Inf    1  -1.487  0.6726\
+ Deep AIC / Constrained Random                      0.0873 0.130 Inf    1  -1.635  0.5750\
+ (Full-Distribution AIC) / (D-Optimality)           0.5386 0.434 Inf    1  -0.768  0.9729\
+ (Full-Distribution AIC) / Constrained Random       0.4407 0.344 Inf    1  -1.050  0.9007\
+ (D-Optimality) / Constrained Random                0.8182 0.536 Inf    1  -0.306  0.9996\
+\
+P value adjustment: tukey method for comparing a family of 6 estimates \
+Tests are performed on the log odds ratio scale \
+> \
+> # ==========================================\
+> # ==========================================\
+> # ==========================================\
+> # ==========================================\
+> # ==========================================\
+> # Precision Analysis\
+> # ==========================================\
+> \
+> \
+> \
+> # 2. Precision Model: Within converged runs, what are the odds of True Success?\
+> df_converged_success <- subset(df_discounted, Metric %in% c("True Success", "False Success"))\
+> df_converged_success$Is_True_Success <- ifelse(df_converged_success$Metric == "True Success", 1, 0)\
+> \
+> # Step 1: Subset the data for the 1s condition\
+> # Note: Adjust "1s Duration" if your string looks exactly like "1s" or "1s Duration"\
+> df_1s <- subset(df_converged_success, Duration == "1s Duration" | Duration == "1s")\
+> \
+> # Step 2: Run the Weighted Binomial GLM\
+> model_1s <- glm(Is_True_Success ~ Algorithm, \
++                 data = df_1s, \
++                 weights = Count, \
++                 family = binomial,\
++                 method = "brglmFit")\
+> \
+> # Step 3: Extract the full pairwise comparisons matrix\
+> pairs_1s <- emmeans(model_1s, pairwise ~ Algorithm, type = "response")\
+> \
+> # View the results\
+> pairs_1s$emmeans   # Shows predicted success probabilities per algorithm\
+ Algorithm              prob     SE  df asymp.LCL asymp.UCL\
+ Standard AIC          0.975 0.0158 Inf     0.916     0.993\
+ Purely Epistemic AIC  0.959 0.0214 Inf     0.889     0.986\
+ Deep AIC              0.965 0.0187 Inf     0.903     0.988\
+ Full-Distribution AIC 0.965 0.0187 Inf     0.903     0.988\
+ D-Optimality          0.880 0.0333 Inf     0.798     0.932\
+ Constrained Random    0.912 0.0289 Inf     0.837     0.955\
+\
+Confidence level used: 0.95 \
+Intervals are back-transformed from the logit scale \
+> pairs_1s$contrasts # Shows the pairwise comparisons (Odds Ratios and p-values)\
+ contrast                                       odds.ratio    SE  df null z.ratio p.value\
+ Standard AIC / Purely Epistemic AIC                 1.638 1.390 Inf    1   0.583  0.9922\
+ Standard AIC / Deep AIC                             1.415 1.200 Inf    1   0.411  0.9985\
+ Standard AIC / (Full-Distribution AIC)              1.415 1.200 Inf    1   0.411  0.9985\
+ Standard AIC / (D-Optimality)                       5.253 3.770 Inf    1   2.313  0.1887\
+ Standard AIC / Constrained Random                   3.707 2.740 Inf    1   1.775  0.4819\
+ Purely Epistemic AIC / Deep AIC                     0.864 0.669 Inf    1  -0.189  1.0000\
+ Purely Epistemic AIC / (Full-Distribution AIC)      0.864 0.669 Inf    1  -0.189  1.0000\
+ Purely Epistemic AIC / (D-Optimality)               3.208 2.030 Inf    1   1.840  0.4396\
+ Purely Epistemic AIC / Constrained Random           2.264 1.490 Inf    1   1.244  0.8153\
+ Deep AIC / (Full-Distribution AIC)                  1.000 0.774 Inf    1   0.000  1.0000\
+ Deep AIC / (D-Optimality)                           3.713 2.350 Inf    1   2.077  0.2994\
+ Deep AIC / Constrained Random                       2.621 1.720 Inf    1   1.470  0.6835\
+ (Full-Distribution AIC) / (D-Optimality)            3.713 2.350 Inf    1   2.077  0.2994\
+ (Full-Distribution AIC) / Constrained Random        2.621 1.720 Inf    1   1.470  0.6835\
+ (D-Optimality) / Constrained Random                 0.706 0.339 Inf    1  -0.727  0.9787\
+\
+P value adjustment: tukey method for comparing a family of 6 estimates \
+Tests are performed on the log odds ratio scale \
+> \
+> # Step 1: Subset the data for the 5s condition\
+> df_5s <- subset(df_converged_success, Duration == "5s Duration" | Duration == "5s")\
+> \
+> # Step 2: Run the Weighted Binomial GLM\
+> model_5s <- glm(Is_True_Success ~ Algorithm, \
++                 data = df_5s, \
++                 weights = Count, \
++                 family = binomial,\
++                 method = "brglmFit")\
+> \
+> # Step 3: Extract the full pairwise comparisons matrix\
+> pairs_5s <- emmeans(model_5s, pairwise ~ Algorithm, type = "response")\
+> \
+> # View the results\
+> pairs_5s$emmeans\
+ Algorithm              prob      SE  df asymp.LCL asymp.UCL\
+ Standard AIC          0.985 0.01230 Inf     0.928     0.997\
+ Purely Epistemic AIC  0.974 0.02100 Inf     0.880     0.995\
+ Deep AIC              0.995 0.00709 Inf     0.924     1.000\
+ Full-Distribution AIC 0.995 0.00716 Inf     0.923     1.000\
+ D-Optimality          0.984 0.01270 Inf     0.926     0.997\
+ Constrained Random    0.964 0.01920 Inf     0.900     0.987\
+\
+Confidence level used: 0.95 \
+Intervals are back-transformed from the logit scale \
+> pairs_5s$contrasts\
+ contrast                                       odds.ratio     SE  df null z.ratio p.value\
+ Standard AIC / Purely Epistemic AIC                 1.726  2.030 Inf    1   0.464  0.9973\
+ Standard AIC / Deep AIC                             0.327  0.538 Inf    1  -0.679  0.9843\
+ Standard AIC / (Full-Distribution AIC)              0.330  0.544 Inf    1  -0.673  0.9849\
+ Standard AIC / (D-Optimality)                       1.032  1.210 Inf    1   0.027  1.0000\
+ Standard AIC / Constrained Random                   2.459  2.440 Inf    1   0.907  0.9447\
+ Purely Epistemic AIC / Deep AIC                     0.189  0.313 Inf    1  -1.008  0.9155\
+ Purely Epistemic AIC / (Full-Distribution AIC)      0.191  0.316 Inf    1  -1.002  0.9175\
+ Purely Epistemic AIC / (D-Optimality)               0.598  0.703 Inf    1  -0.438  0.9980\
+ Purely Epistemic AIC / Constrained Random           1.425  1.420 Inf    1   0.355  0.9993\
+ Deep AIC / (Full-Distribution AIC)                  1.010  2.040 Inf    1   0.005  1.0000\
+ Deep AIC / (D-Optimality)                           3.159  5.200 Inf    1   0.698  0.9822\
+ Deep AIC / Constrained Random                       7.530 11.500 Inf    1   1.323  0.7726\
+ (Full-Distribution AIC) / (D-Optimality)            3.127  5.150 Inf    1   0.692  0.9829\
+ (Full-Distribution AIC) / Constrained Random        7.454 11.400 Inf    1   1.316  0.7764\
+ (D-Optimality) / Constrained Random                 2.384  2.360 Inf    1   0.876  0.9524\
+\
+P value adjustment: tukey method for comparing a family of 6 estimates \
+Tests are performed on the log odds ratio scale }
